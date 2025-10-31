@@ -88,15 +88,43 @@ DataModelService <- R6::R6Class("DataModelService",
         } else stop("找不到 Length 列，请保证 counts 文件第一列基因 ID，第二列为 Length 或指定 length_col")
       }
       rownames(expr) <- geneid
-      # ensure sample order matches groups_df
-      if (!all(groups_df$Samples %in% colnames(expr))) {
-        stop("GroupSamples$Samples 与 counts 列名不匹配")
+
+      # sanitize sample names both in counts and groups to match featureCounts/perl cleaning
+      original_colnames <- colnames(expr)
+      sanitized_colnames <- make.names(original_colnames, unique = TRUE)
+      if (!identical(original_colnames, sanitized_colnames)) {
+        colnames(expr) <- sanitized_colnames
       }
+
+      # ensure sample order matches groups_df
+      # sanitize groups_df$Samples similarly but keep original mapping
+      groups_df <- as.data.frame(groups_df, stringsAsFactors = FALSE)
+      groups_df$Samples_original <- groups_df$Samples
+      groups_df$Samples <- make.names(groups_df$Samples, unique = TRUE)
+
+      missing_in_counts <- setdiff(groups_df$Samples, colnames(expr))
+      missing_in_groups <- setdiff(colnames(expr), groups_df$Samples)
+      if (length(missing_in_counts) > 0 || length(missing_in_groups) > 0) {
+        stop("样本名称不匹配:\n",
+             if (length(missing_in_counts) > 0) paste0("  在 GroupSamples 中但不在 counts 中: ", paste(missing_in_counts, collapse = ", "), "\n") else "",
+             if (length(missing_in_groups) > 0) paste0("  在 counts 中但不在 GroupSamples 中: ", paste(missing_in_groups, collapse = ", "), "\n") else "",
+             "建议检查特征计数文件和 GroupSamples 文件中的样本命名一致性（可以使用 make.names 规范化）")
+      }
+
       expr <- expr[, groups_df$Samples, drop = FALSE]
+
+      # build colData and set rownames to sample names
+      coldf <- groups_df[match(colnames(expr), groups_df$Samples), , drop = FALSE]
+      rownames(coldf) <- coldf$Samples
+      # restore original sample names in a column to keep mapping
+      if ("Samples_original" %in% colnames(coldf)) {
+        coldf$Samples_pretty <- coldf$Samples_original
+      }
+
       se <- SummarizedExperiment::SummarizedExperiment(
         assays = list(counts = as.matrix(expr)),
         rowData = S4Vectors::DataFrame(Length = length_vec),
-        colData = S4Vectors::DataFrame(groups_df[match(colnames(expr), groups_df$Samples), , drop = FALSE])
+        colData = S4Vectors::DataFrame(coldf)
       )
       self$se <- se
       invisible(se)
@@ -119,12 +147,21 @@ AnnotationService <- R6::R6Class("AnnotationService",
   public = list(
     gtf_annotation = list(),
     kegg_organism_code = NULL,
-    parse_GTF_NCBI_file = function(file_path) {
+    parse_GTF_NCBI_file = function(file_path, do_perl_clean = FALSE) {
       if (!file.exists(file_path)) stop(file_path, " 不存在")
       .ensure_pkg(c("rtracklayer", "tibble", "dplyr", "stringr"))
-      # Parse GTF with rtracklayer (no perl)
-      gtf <- rtracklayer::import(file_path, format = "gtf")
-      # build tibble and extract GeneID from db_xref if present
+      # Allow optional perl pre-clean for problematic GTFs
+      gtf_source <- file_path
+      if (do_perl_clean) {
+        mod <- paste0(file_path, ".modify")
+        if (!file.exists(mod)) {
+          cmd <- paste('perl -pe "s/db_xref \"(?!GeneID)[^\"]+\"; //g"', shQuote(file_path), ">", shQuote(mod))
+          system(cmd)
+        }
+        gtf_source <- mod
+      }
+      # Parse GTF with rtracklayer
+      gtf <- rtracklayer::import(gtf_source, format = "gtf")
       df <- tibble::tibble(
         gene_id = as.character(gtf$gene_id),
         gene_name = as.character(gtf$gene),
@@ -132,14 +169,12 @@ AnnotationService <- R6::R6Class("AnnotationService",
         description = as.character(gtf$description),
         product = as.character(gtf$product)
       )
-      # Extract ENTREZID if present in db_xref entries
       ENTREZID <- vapply(df$db_xref, FUN.VALUE = character(1), FUN = function(x) {
         if (is.null(x)) return(NA_character_)
         v <- grep("GeneID:", x, value = TRUE)
         if (length(v) == 0) return(NA_character_)
-        sub(".*GeneID:(\d+).*", "\1", v[1])
+        sub(".*GeneID:(\\d+).*", "\\1", v[1])
       })
-      # Create output
       out <- tibble::tibble(Geneid = df$gene_id, SYMBOL = df$gene_name, ENTREZID = ENTREZID, GENENAME = ifelse(is.na(df$description) | df$description == "", df$product, df$description))
       out <- dplyr::distinct(out)
       self$gtf_annotation$source <- "NCBI_GTF"
@@ -339,7 +374,7 @@ DEAnalysisService <- R6::R6Class("DEAnalysisService",
       norm_counts <- DESeq2::counts(dds, normalized = TRUE)
       meanA <- rowMeans(norm_counts[, samples_exp, drop = FALSE])
       meanB <- rowMeans(norm_counts[, samples_ctrl, drop = FALSE])
-      result_table <- base::merge(data.frame(mean_SampleA = meanA[rownames(res)], mean_SampleB = meanB[rownames(res)]), as.data.frame(res), by = "row.names")
+      result_table <- base::merge(data.frame(mean_SampleA = meanA[rownames(res)], mean_SampleB = meanB[rownames(res)]), as.data.frame(res), by = "row.rows")
       rownames(result_table) <- result_table[, 1]; result_table <- result_table[, -1]
       result_table <- data.frame(sampleA = group_exp, sampleB = group_ctrl, result_table)
       if (!is.null(out_dir) && requireNamespace("openxlsx", quietly = TRUE)) openxlsx::write.xlsx(norm_counts, file.path(out_dir, paste0("read_counts_DESeq2_normalized_", group_exp, "_versus_", group_ctrl, ".xlsx")), rowNames = TRUE)
@@ -494,7 +529,12 @@ PipelineHelper <- R6::R6Class("PipelineHelper",
       self$enrich <- enrich %||% EnrichmentService$new()
       self$viz <- viz %||% VisualizationService$new()
     },
-    build_se = function(counts_path, groups_path, length_col = "Length") {
+    build_se = function(counts_path = NULL, groups_path = NULL, length_col = "Length") {
+      # If paths are not provided, try to use My_QUANT_DIR environment variable (set by upstream bash scripts)
+      quant_dir <- Sys.getenv("My_QUANT_DIR", unset = "02.Quant_定量结果")
+      if (is.null(counts_path) || counts_path == "") counts_path <- file.path(quant_dir, "result_count.with_Length.tsv")
+      if (is.null(groups_path) || groups_path == "") groups_path <- file.path(quant_dir, "GroupSamples.txt")
+
       counts_df <- self$io$read_counts(counts_path)
       groups_df <- self$io$read_groups(groups_path)
       se <- self$model$build_se(counts_df, groups_df, length_col = length_col)
