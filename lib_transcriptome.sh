@@ -155,12 +155,12 @@ run_featurecounts() {
     featureCounts -T "${threads}" -p -t "${feature_type}" -g "${feature_attr}" \
         -a "${gtf}" -o "${My_QUANT_DIR}/result_count.tsv" "${bams[@]}" || err "featureCounts 失败"
 
-    # 格式化输出（保留原脚本的处理）
-    sed -n '2p' "${My_QUANT_DIR}/result_count.tsv" | cut -f 1,7- | perl -pe 's|\t\S+/(\S+)/[^/]+\.bam|\t\1|g;s|-|_|g' >"${My_QUANT_DIR}/result_count.without_Length.tsv"
-    cut -f 1,7- "${My_QUANT_DIR}/result_count.tsv" | sed '1,2d' | sed 's/ //g' >>"${My_QUANT_DIR}/result_count.without_Length.tsv"
+    # 格式化输出（优化后减少管道调用）
+    awk 'NR==2 {print $1; for(i=7;i<=NF;i++) {gsub(/.*\/([^\/]+)\/[^\/]+\.bam/,"\\1",$i); gsub(/-/,"_",$i); printf "\t%s", $i} print ""}' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.without_Length.tsv"
+    awk 'NR>2 {gsub(/ /,"",$0); print $1; for(i=7;i<=NF;i++) printf "\t%s", $i; print ""}' "${My_QUANT_DIR}/result_count.tsv" >> "${My_QUANT_DIR}/result_count.without_Length.tsv"
 
-    sed -n '2p' "${My_QUANT_DIR}/result_count.tsv" | cut -f 1,6,7- | perl -pe 's|\t\S+/(\S+)/[^/]+\.bam|\t\1|g;s|-|_|g' >"${My_QUANT_DIR}/result_count.with_Length.tsv"
-    cut -f 1,6,7- "${My_QUANT_DIR}/result_count.tsv" | sed '1,2d' | sed 's/ //g' >>"${My_QUANT_DIR}/result_count.with_Length.tsv"
+    awk 'NR==2 {print $1 "\t" $6; for(i=7;i<=NF;i++) {gsub(/.*\/([^\/]+)\/[^\/]+\.bam/,"\\1",$i); gsub(/-/,"_",$i); printf "\t%s", $i} print ""}' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.with_Length.tsv"
+    awk 'NR>2 {gsub(/ /,"",$0); print $1 "\t" $6; for(i=7;i<=NF;i++) printf "\t%s", $i; print ""}' "${My_QUANT_DIR}/result_count.tsv" >> "${My_QUANT_DIR}/result_count.with_Length.tsv"
     log "featureCounts 完成，输出目录: ${My_QUANT_DIR}"
 }
 
@@ -180,9 +180,30 @@ run_trinity_de_novo() {
     local list_file=$1
     local lefts=()
     local rights=()
+    
+    # 批量查找所有 fastq 文件，避免在循环中重复调用 find
+    local -A left_map
+    local -A right_map
+    while IFS= read -r filepath; do
+        local basename
+        basename=$(basename "${filepath}")
+        local sample
+        sample="${basename%_1.fastq.gz}"
+        left_map["${sample}"]="${filepath}"
+    done < <(find "${My_DATA_DIR}" -name "*_1.fastq.gz" -type f)
+    
+    while IFS= read -r filepath; do
+        local basename
+        basename=$(basename "${filepath}")
+        local sample
+        sample="${basename%_2.fastq.gz}"
+        right_map["${sample}"]="${filepath}"
+    done < <(find "${My_DATA_DIR}" -name "*_2.fastq.gz" -type f)
+    
+    # 根据列表文件组装路径
     while IFS= read -r sample; do
-        lefts+=("$(find "${My_DATA_DIR}" -name "${sample}_1.fastq.gz" -print -quit || true)")
-        rights+=("$(find "${My_DATA_DIR}" -name "${sample}_2.fastq.gz" -print -quit || true)")
+        lefts+=("${left_map[${sample}]:-}")
+        rights+=("${right_map[${sample}]:-}")
     done <"${list_file}"
 
     local LEFTS

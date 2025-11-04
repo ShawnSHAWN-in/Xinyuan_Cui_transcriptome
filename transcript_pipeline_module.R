@@ -150,13 +150,16 @@ AnnotationService <- R6::R6Class("AnnotationService",
     parse_GTF_NCBI_file = function(file_path, do_perl_clean = FALSE) {
       if (!file.exists(file_path)) stop(file_path, " 不存在");
       .ensure_pkg(c("rtracklayer", "tibble", "dplyr", "stringr"));
-      # Allow optional perl pre-clean for problematic GTFs
+      # Native R processing instead of perl system call
       gtf_source <- file_path;
       if (do_perl_clean) {
         mod <- paste0(file_path, ".modify");
         if (!file.exists(mod)) {
-          cmd <- paste('perl -pe "s/db_xref \"(?!GeneID)[^"]+\"; //g"', shQuote(file_path), ">", shQuote(mod));
-          system(cmd);
+          # Read and clean in R instead of using perl system call
+          lines <- readLines(file_path);
+          # Remove db_xref entries that don't contain GeneID
+          lines <- gsub('db_xref "(?!GeneID)[^"]+"; ', '', lines, perl = TRUE);
+          writeLines(lines, mod);
         }
         gtf_source <- mod;
       }
@@ -173,7 +176,7 @@ AnnotationService <- R6::R6Class("AnnotationService",
         if (is.null(x)) return(NA_character_);
         v <- grep("GeneID:", x, value = TRUE);
         if (length(v) == 0) return(NA_character_);
-        sub(".*GeneID:(\d+).*", "\1", v[1]);
+        sub(".*GeneID:(\\d+).*", "\\1", v[1]);
       });
       out <- tibble::tibble(Geneid = df$gene_id, SYMBOL = df$gene_name, ENTREZID = ENTREZID, GENENAME = ifelse(is.na(df$description) | df$description == "", df$product, df$description));
       out <- dplyr::distinct(out);
@@ -344,17 +347,16 @@ DEAnalysisService <- R6::R6Class("DEAnalysisService",
       tTags <- edgeR::topTags(et, n = NULL);
       result_table <- tTags$table;
       norm_cpm <- edgeR::cpm(exp_study);
-      // mean samples
-      if (length(samples_exp) > 1 && length(samples_ctrl) > 1) {
-        mean_sample <- data.frame(mean_SampleA = rowMeans(norm_cpm[, samples_exp, drop = FALSE]), mean_SampleB = rowMeans(norm_cpm[, samples_ctrl, drop = FALSE]));
-      } else {
-        mean_sample <- data.frame(mean_SampleA = norm_cpm[, samples_exp, drop = FALSE], mean_SampleB = norm_cpm[, samples_ctrl, drop = FALSE]);
-      }
+      # Compute mean samples efficiently
+      mean_sample <- data.frame(
+        mean_SampleA = rowMeans(norm_cpm[, samples_exp, drop = FALSE]),
+        mean_SampleB = rowMeans(norm_cpm[, samples_ctrl, drop = FALSE])
+      );
       result_table <- base::merge(mean_sample, result_table, by = "row.names");
       rownames(result_table) <- result_table[, 1];
       result_table <- result_table[, -1];
       result_table <- data.frame(sampleA = group_exp, sampleB = group_ctrl, result_table);
-      // save normalized cpm if requested
+      # save normalized cpm if requested
       if (!is.null(out_dir) && requireNamespace("openxlsx", quietly = TRUE)) openxlsx::write.xlsx(norm_cpm, file.path(out_dir, paste0("read_counts_edgeR_normalized_", group_exp, "_versus_", group_ctrl, ".xlsx")), rowNames = TRUE);
       invisible(list(tbl = result_table, norm = norm_cpm));
     },
@@ -372,14 +374,13 @@ DEAnalysisService <- R6::R6Class("DEAnalysisService",
       dds <- DESeq2::DESeq(dds, quiet = TRUE);
       res <- DESeq2::results(dds);
       norm_counts <- DESeq2::counts(dds, normalized = TRUE);
+      # Compute means efficiently
       meanA <- rowMeans(norm_counts[, samples_exp, drop = FALSE]);
       meanB <- rowMeans(norm_counts[, samples_ctrl, drop = FALSE]);
       res_df <- as.data.frame(res);
       res_df$Geneid <- rownames(res_df);
-      meanA_sub <- meanA[rownames(res_df)];
-      meanB_sub <- meanB[rownames(res_df)];
-      meanA_sub <- as.numeric(meanA_sub);
-      meanB_sub <- as.numeric(meanB_sub);
+      meanA_sub <- as.numeric(meanA[rownames(res_df)]);
+      meanB_sub <- as.numeric(meanB[rownames(res_df)]);
       result_table <- cbind(sampleA = group_exp, sampleB = group_ctrl,
                             mean_SampleA = meanA_sub, mean_SampleB = meanB_sub,
                             res_df);
@@ -480,10 +481,10 @@ VisualizationService <- R6::R6Class("VisualizationService",
     plot_MA = function(de_tbl) {
       .ensure_pkg("ggplot2");
       df <- as.data.frame(de_tbl);
+      # Efficiently compute A (average expression)
       if (!("baseMeanLog2" %in% colnames(df))) {
-        // try to compute A as average of mean_SampleA and mean_SampleB
         if (all(c("mean_SampleA", "mean_SampleB") %in% colnames(df))) {
-          df$A <- (df$mean_SampleA + df$mean_SampleB) / 2;
+          df$A <- (df$mean_SampleA + df$mean_SampleB) * 0.5;
         } else df$A <- 0;
       } else {
         df$A <- df$baseMeanLog2;

@@ -100,7 +100,11 @@ case "${cmd}" in
     preprocess)
         if [[ -z "${list_file}" ]]; then err "preprocess 需要 -l list_file"; fi
         check_cmd parallel
-        parallel -j 4 --joblog "${My_DATA_DIR}/log_preprocess" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} dummy_index 2>/dev/null || true'" :::: "${list_file}" || true
+        # 使用用户指定的线程数或默认值，限制并发任务数以避免过载
+        local preprocess_jobs=$((threads / 10))
+        [[ ${preprocess_jobs} -lt 1 ]] && preprocess_jobs=1
+        [[ ${preprocess_jobs} -gt 6 ]] && preprocess_jobs=6
+        parallel -j ${preprocess_jobs} --joblog "${My_DATA_DIR}/log_preprocess" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} dummy_index 2>/dev/null || true'" :::: "${list_file}" || true
         ;;
     align)
         if [[ -z "${list_file}" || -z "${hisat_index}" ]]; then err "align 需要 -l list_file -g hisat_index"; fi
