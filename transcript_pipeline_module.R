@@ -176,7 +176,7 @@ AnnotationService <- R6::R6Class("AnnotationService",
         if (is.null(x)) return(NA_character_);
         v <- grep("GeneID:", x, value = TRUE);
         if (length(v) == 0) return(NA_character_);
-        sub(".*GeneID:(\\d+).*", "\\1", v[1]);
+        sub(".*GeneID:([0-9]+).*", "\\1", v[1]);
       });
       out <- tibble::tibble(Geneid = df$gene_id, SYMBOL = df$gene_name, ENTREZID = ENTREZID, GENENAME = ifelse(is.na(df$description) | df$description == "", df$product, df$description));
       out <- dplyr::distinct(out);
@@ -484,7 +484,7 @@ VisualizationService <- R6::R6Class("VisualizationService",
       # Efficiently compute A (average expression)
       if (!("baseMeanLog2" %in% colnames(df))) {
         if (all(c("mean_SampleA", "mean_SampleB") %in% colnames(df))) {
-          df$A <- (df$mean_SampleA + df$mean_SampleB) * 0.5;
+          df$A <- (df$mean_SampleA + df$mean_SampleB) / 2;
         } else df$A <- 0;
       } else {
         df$A <- df$baseMeanLog2;
