@@ -45,18 +45,18 @@ feature_attr="gene"
 # 解析常用参数（子命令内会再次解析必需项）
 while getopts ":l:t:g:a:o:c:s:x:i:F:G:" opt; do
     case ${opt} in
-        l) list_file=${OPTARG} ;;
-        t) threads=${OPTARG} ;;
+        l) list_file=${OPTARG} ;; 
+        t) threads=${OPTARG} ;; 
         g) hisat_index=${OPTARG} ;;  # hisat index for align
         a) genome_gtf=${OPTARG} ;;   # annotation for count
         o) organism=${OPTARG} ;;
-        c) count_matrix=${OPTARG} ;;
-        s) samples_file=${OPTARG} ;;
-        x) contrasts_file=${OPTARG} ;;
-        i) hisat_index=${OPTARG} ;;
+        c) count_matrix=${OPTARG} ;; 
+        s) samples_file=${OPTARG} ;; 
+        x) contrasts_file=${OPTARG} ;; 
+        i) hisat_index=${OPTARG} ;; 
         F) feature_type=${OPTARG} ;; # featureCounts -t
         G) feature_attr=${OPTARG} ;; # featureCounts -g
-        \?) echo "未知参数 -$OPTARG" >&2; usage ;;
+        \\?) echo "未知参数 -$OPTARG" >&2; usage ;;
     esac
 done
 shift $((OPTIND-1)) || true
@@ -96,49 +96,52 @@ case "${cmd}" in
             log "使用 ${list_file} 进行 prefetch 下载"
         fi
         download_sra_with_prefetch "${list_file}" "${threads}"
-        ;;
+        ;; 
     preprocess)
         if [[ -z "${list_file}" ]]; then err "preprocess 需要 -l list_file"; fi
         check_cmd parallel
-        parallel -j 4 --joblog "${My_DATA_DIR}/log_preprocess" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} dummy_index 2>/dev/null || true'" :::: "${list_file}" || true
-        ;;
+        parallel -j 4 --joblog "${My_DATA_DIR}/log_preprocess" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} dummy_index 2>/dev/null || true'" :::: "${list_file}"
+        ;; 
     align)
         if [[ -z "${list_file}" || -z "${hisat_index}" ]]; then err "align 需要 -l list_file -g hisat_index"; fi
         check_cmd parallel
         parallel -j 6 --joblog "${My_DATA_DIR}/log_hisat2_${list_file}" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} ${hisat_index} ${threads}'" :::: "${list_file}"
-        ;;
+        ;; 
     count)
         if [[ -z "${list_file}" || -z "${genome_gtf}" ]]; then err "count 需要 -l list_file -a genome.gtf"; fi
-        # 将用户指定的 feature_type/feature_attr 传入 run_featurecounts
         run_featurecounts "${genome_gtf}" "${list_file}" "${threads}" "${feature_type}" "${feature_attr}"
-        ;;
+        ;; 
     de)
         if [[ -z "${count_matrix}" || -z "${samples_file}" || -z "${contrasts_file}" ]]; then err "de 需要 -c count_matrix -s samples_file -x contrasts_file"; fi
         run_de_small_samples "${count_matrix}" "${samples_file}" "${contrasts_file}"
-        ;;
+        ;; 
     trinity)
         if [[ -z "${list_file}" ]]; then err "trinity 需要 -l list_file"; fi
         run_trinity_de_novo "${list_file}"
-        ;;
+        ;; 
     all)
         if [[ -z "${list_file}" || -z "${organism}" ]]; then err "all 需要 -l list_file -o organism"; fi
         set_genome_by_organism
         log "开始 all 流程: 下载 -> 质控/比对 -> 计数"
-        if grep -q "^GSM" "${list_file}"; then
-            gsm_to_srr "${list_file}"
+        # 获取数据（简洁版替换原 127-133 行）
+        if grep -Eq '^[[:space:]]*GSM[0-9]+' "${list_file}"; then
+            gsm_to_srr "${list_file}"                                     # 产生 ${My_DATA_DIR}/list_file_SRR
             list_file="${My_DATA_DIR}/list_file_SRR"
-            download_sra_with_prefetch "${list_file}" 6
+            grep -E '^(SRR|ERR)[0-9]+' "${list_file}" | sort -u > "${My_DATA_DIR}/list_file_SRR.cleaned"
+            download_sra_with_prefetch "${My_DATA_DIR}/list_file_SRR.cleaned" 6
+        elif grep -Eq '^(SRR|ERR)[0-9]+' "${list_file}"; then
+            grep -E '^(SRR|ERR)[0-9]+' "${list_file}" | sort -u > "${My_DATA_DIR}/list_file_SRR.cleaned"
+            download_sra_with_prefetch "${My_DATA_DIR}/list_file_SRR.cleaned" 6
         else
-            download_sra_with_prefetch "${list_file}" 6
+            echo "[WARN] 未检测到 GSM 或 SRR/ERR 编号: ${list_file}" >&2
         fi
         parallel -j 6 --joblog "${My_DATA_DIR}/log_hisat2_all" --progress "bash -lc 'source ${SCRIPTDIR}/lib_transcriptome.sh; run_hisat2_sample {} ${hisat_index} ${threads}'" :::: "${list_file}"
-        # all 流程中使用默认 feature_type/feature_attr，用户可用 count 命令单独运行计数并定制
         run_featurecounts "${genome_gtf}" "${list_file}" 12 "${feature_type}" "${feature_attr}"
         log "all 流程完成"
-        ;;
+        ;; 
     *)
         usage
         ;;
-esac
+ esac
 
 exit 0
