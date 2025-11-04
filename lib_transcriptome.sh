@@ -156,11 +156,45 @@ run_featurecounts() {
         -a "${gtf}" -o "${My_QUANT_DIR}/result_count.tsv" "${bams[@]}" || err "featureCounts 失败"
 
     # 格式化输出（优化后减少管道调用）
-    awk 'NR==2 {print $1; for(i=7;i<=NF;i++) {gsub(/.*\/([^\/]+)\/[^\/]+\.bam/,"\\1",$i); gsub(/-/,"_",$i); printf "\t%s", $i} print ""}' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.without_Length.tsv"
-    awk 'NR>2 {gsub(/ /,"",$0); print $1; for(i=7;i<=NF;i++) printf "\t%s", $i; print ""}' "${My_QUANT_DIR}/result_count.tsv" >> "${My_QUANT_DIR}/result_count.without_Length.tsv"
+    awk 'BEGIN {FS="\t"; OFS="\t"}
+         NR==2 {
+             printf "%s", $1;
+             for(i=7; i<=NF; i++) {
+                 sample = $i;
+                 # Extract sample name from path like /path/to/data/SRR123/SRR123.sorted.bam
+                 n = split(sample, parts, "/");
+                 if (n >= 2) sample = parts[n-1];
+                 gsub(/-/, "_", sample);
+                 printf "\t%s", sample;
+             }
+             printf "\n";
+         }
+         NR>2 {
+             gsub(/ /, "", $0);
+             printf "%s", $1;
+             for(i=7; i<=NF; i++) printf "\t%s", $i;
+             printf "\n";
+         }' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.without_Length.tsv"
 
-    awk 'NR==2 {print $1 "\t" $6; for(i=7;i<=NF;i++) {gsub(/.*\/([^\/]+)\/[^\/]+\.bam/,"\\1",$i); gsub(/-/,"_",$i); printf "\t%s", $i} print ""}' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.with_Length.tsv"
-    awk 'NR>2 {gsub(/ /,"",$0); print $1 "\t" $6; for(i=7;i<=NF;i++) printf "\t%s", $i; print ""}' "${My_QUANT_DIR}/result_count.tsv" >> "${My_QUANT_DIR}/result_count.with_Length.tsv"
+    awk 'BEGIN {FS="\t"; OFS="\t"}
+         NR==2 {
+             printf "%s\t%s", $1, $6;
+             for(i=7; i<=NF; i++) {
+                 sample = $i;
+                 # Extract sample name from path like /path/to/data/SRR123/SRR123.sorted.bam
+                 n = split(sample, parts, "/");
+                 if (n >= 2) sample = parts[n-1];
+                 gsub(/-/, "_", sample);
+                 printf "\t%s", sample;
+             }
+             printf "\n";
+         }
+         NR>2 {
+             gsub(/ /, "", $0);
+             printf "%s\t%s", $1, $6;
+             for(i=7; i<=NF; i++) printf "\t%s", $i;
+             printf "\n";
+         }' "${My_QUANT_DIR}/result_count.tsv" > "${My_QUANT_DIR}/result_count.with_Length.tsv"
     log "featureCounts 完成，输出目录: ${My_QUANT_DIR}"
 }
 
