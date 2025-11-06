@@ -1,9 +1,9 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "image": "rocker/tidyverse:latest",
   "features": {
     "ghcr.io/rocker-org/devcontainer-features/r-rig:1": {},
     "ghcr.io/rocker-org/devcontainer-features/r-packages:1": {
-        "packages": "ggplot2"
+      "packages": "ggplot2"
     }
   }
 }
