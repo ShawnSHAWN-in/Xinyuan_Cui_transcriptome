@@ -3,7 +3,7 @@
   "features": {
     "ghcr.io/rocker-org/devcontainer-features/r-rig:1": {},
     "ghcr.io/rocker-org/devcontainer-features/r-packages:1": {
-        "packages": "tidyverse"
+      "packages": "tidyverse,data.table,reshape2,openxlsx,ggrepel,ggsci,scales,forcats,patchwork,pheatmap,R6,BiocManager,edgeR,DESeq2,clusterProfiler,enrichplot,pathview,AnnotationDbi,AnnotationHub,rtracklayer,GO.db,SummarizedExperiment,ComplexUpset,org.Hs.eg.db"
     }
   }
 }
