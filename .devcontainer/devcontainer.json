@@ -3,7 +3,8 @@
   "features": {
     "ghcr.io/rocker-org/devcontainer-features/r-rig:1": {},
     "ghcr.io/rocker-org/devcontainer-features/r-packages:1": {
-      "packages": "ggplot2"
+      "packages": "R6,data.table,tidyverse,openxlsx,ggsci,reshape2,RColorBrewer,pheatmap,ggforce,ggrepel,FactoMineR,factoextra,randomcoloR,scatterplot3d,patchwork,scales,BiocManager",
+      "additionalCommands": "Rscript -e \"if (!require('BiocManager')) install.packages('BiocManager'); BiocManager::install(c('edgeR','DESeq2','clusterProfiler','enrichplot','pathview','ComplexUpset','UpSetR','AnnotationDbi','AnnotationHub','GO.db','AnnotationForge','rtracklayer'), ask=FALSE)\""
     }
   }
 }
