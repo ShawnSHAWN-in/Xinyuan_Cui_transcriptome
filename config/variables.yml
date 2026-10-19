@@ -1,0 +1,24 @@
+sample_column: Sample
+legacy_group_column: Group
+legacy_parse: true
+variables:
+  Condition:
+    type: factor
+    levels: [Cat, Leopard, Tiger, NC]
+  Time_f:
+    type: factor
+    levels: ['06', '12', '24']
+  Replicate:
+    type: integer
+derived:
+  Time_h:
+    from: Time_f
+    type: numeric
+  HostSpecies:
+    constant: Panthera leo
+    type: character
+combinations:
+  Condition_Time:
+    variables: [Condition, Time_f]
+    order: [Time_f, Condition]
+    separator: '_'

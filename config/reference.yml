@@ -1,0 +1,10 @@
+reference_species: Felis catus
+tax_id: 9685
+kegg_code: fca
+go_ontology: BP
+go_ancestors: true
+run_kegg: true
+require_kegg: false
+kegg_term2gene: ''
+kegg_term2name: ''
+kegg_refresh: initial

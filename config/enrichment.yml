@@ -1,0 +1,4 @@
+min_gs_size: 10
+max_gs_size: 500
+seed: 20261019
+rng_kind: Mersenne-Twister

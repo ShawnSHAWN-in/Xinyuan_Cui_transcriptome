@@ -1,0 +1,32 @@
+style:
+  base_size: 11
+  base_family: sans
+  title_size: 14
+  axis_angle: 30
+  border_width: 0.8
+  direction_colors: {Up: '#E64B35', Down: '#4DBBD5', Not: '#BDBDBD'}
+  significance_colors: ['#000000', '#009900', '#FFFF00']
+  condition_colors: {Cat: '#3B75AF', Leopard: '#E69F00', Tiger: '#009E73', NC: '#777777'}
+display:
+  color_by: Condition
+  shape_by: Time_f
+  order_by: [Time_f, Condition, Replicate]
+  facet_by: []
+  heatmap_annotations: [Condition, Time_f]
+  heatmap_max_genes: 500
+  compare_by: [Time_f, Condition]
+  top_terms: 12
+  compare_top_each: 5
+  compare_max_terms: 30
+  curve_top_each: 3
+  top_genes_each: 15
+  enrichment_networks: true
+  enrichment_upset: true
+  pathview: false
+  pathview_top: 2
+  theme_go_ids: []
+export:
+  dpi: 300
+  max_pixels: 24000000
+  combine_columns: 3
+  combine_per_page: 9
