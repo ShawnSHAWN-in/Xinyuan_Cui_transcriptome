@@ -1,0 +1,31 @@
+name: Submit main to SCNet
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check submission code
+        run: python3 -m unittest discover -s tests -p 'test_scnet.py' -v
+      - name: Create container with startup script
+        env:
+          SCNET_USER: ${{ secrets.SCNET_USER }}
+          SCNET_ACCESS_KEY: ${{ secrets.SCNET_ACCESS_KEY }}
+          SCNET_SECRET_KEY: ${{ secrets.SCNET_SECRET_KEY }}
+          SCNET_CLUSTER_ID: ${{ vars.SCNET_CLUSTER_ID }}
+          SCNET_CONTAINER_JSON: ${{ vars.SCNET_CONTAINER_JSON }}
+          SCNET_WORK_ROOT: ${{ vars.SCNET_WORK_ROOT }}
+          SCNET_RUN_COMMAND: ${{ vars.SCNET_RUN_COMMAND }}
+        run: python3 scripts/scnet/submit.py

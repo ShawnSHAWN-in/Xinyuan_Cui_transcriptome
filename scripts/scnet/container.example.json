@@ -1,0 +1,20 @@
+{
+  "taskType": "ssh",
+  "acceleratorType": "cpu",
+  "version": "REPLACE_WITH_IMAGE_VERSION",
+  "imagePath": "REPLACE_WITH_AUTHORIZED_IMAGE_PATH",
+  "resourceGroup": "REPLACE_WITH_RESOURCE_GROUP",
+  "cpuNumber": 8,
+  "ramSize": 32768,
+  "gpuNumber": 0,
+  "taskNumber": 1,
+  "timeoutLimit": "04:00:00",
+  "mountInfoList": [
+    {
+      "sourcePath": "/REPLACE_WITH_AUTHORIZED_STORAGE_PATH",
+      "targetPath": "/mnt/work",
+      "type": "path"
+    }
+  ],
+  "containerPortInfoList": []
+}
