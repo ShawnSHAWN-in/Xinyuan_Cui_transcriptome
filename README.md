@@ -111,7 +111,7 @@ schemes:
 
 ## 绘图风格与Up/Down
 
-采用原脚本的白底、黑框、去网格、标题居中风格；PCA保留正方形面板。比较富集默认恢复黑—绿—黄显著性渐变与▲Up/▼Down。
+采用原脚本的白底、黑框、去网格、标题居中风格；QC四种PCA模板复用原基座。比较富集默认恢复黑—绿—黄显著性渐变与▲Up/▼Down。
 
 - ORA主图：每列一个比较、每行一个条目；Up/Down同图，同一格内固定错位。大小为GeneRatio，填色为−log10(FDR)。
 - ORA分面图：Up和Down在同一个文件中左右排列，共用条目与标尺。
@@ -124,6 +124,12 @@ schemes:
 `color_by`、`shape_by`、`facet_by`、`order_by`、`compare_by` 和 `heatmap_annotations` 可引用已声明变量或组合变量。例如PCA颜色按Condition_Time，形状按Time_f；热图按Time_f/Condition排序并添加Batch注释。形状必须使用分类变量。
 
 表达热图默认最多展示500个基因，完整显著基因清单与效应矩阵另外保存，避免对数万个基因计算距离矩阵。灰色效应格表示该比较未进入显著集合；原始受检基因完整效应仍见每比较 `all_tested.tsv`。
+
+## QC和差异图恢复
+
+火山图、MA图、rank图恢复原R6绘图函数、Top 8标签和旧配色；这三种图不再使用富集图的direction_colors。QC恢复旧模块的filterByExpr过滤、PCA设置和主要图像，并补齐独立PCA单图、四类分布、方差解释及归一化因子诊断。
+
+完整图像清单、变量配置、单图/组合图和局部更新命令见 [docs/QC_OUTPUTS.md](docs/QC_OUTPUTS.md)。默认QC输出33组PDF/PNG（含5组兼容副本，3D依赖scatterplot3d）。
 
 ## targets任务与增量运行
 
@@ -191,12 +197,11 @@ TARGETS_TEST_ROOT=/path/to/printed/TEST_ROOT Rscript tests/check_branching.R
 
 该检查会修改临时测试目录中的配置，不应用于真实分析目录。
 
-## 合成数据风格预览
+## 合成数据富集预览
 
 以下为合成数据，仅用于检查布局和theme，不能解释为本项目实验结果。
-
-![PCA风格预览](docs/previews/PCA.png)
 
 ![GO-BP ORA上下调比较预览](docs/previews/GO_BP_ORA.png)
 
 ![GO-BP GSEA正负NES比较预览](docs/previews/GO_BP_GSEA.png)
+

@@ -1,3 +1,9 @@
+qc:
+  group_by: Condition_Time
+  color_by: Condition
+  shape_by: Time_f
+  strata: [Time_f]
+  pca_scale: false
 style:
   base_size: 11
   base_family: sans
@@ -30,3 +36,4 @@ export:
   max_pixels: 24000000
   combine_columns: 3
   combine_per_page: 9
+

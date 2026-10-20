@@ -45,19 +45,28 @@ rank_genes_lst <- function(annotated) {
   list(job = annotated$job, ranking = sort(stats::setNames(tbl$logFC, as.character(tbl$ENTREZID)), decreasing = TRUE))
 }
 
-calc_qc_lst <- function(count_data, metadata) {
+calc_qc_lst <- function(count_data, metadata, settings) {
   check_sample_alignment(metadata, count_data)
-  dge <- edgeR::calcNormFactors(edgeR::DGEList(counts = count_data$counts))
+  group <- settings$group_by
+  if (!group %in% names(metadata)) stop("QC分组变量不存在：", group)
+  counts <- count_data$counts
+  groups <- metadata[[group]][match(colnames(counts), metadata$Sample)]
+  dge <- edgeR::calcNormFactors(edgeR::DGEList(counts = counts))
   log_cpm <- edgeR::cpm(dge, log = TRUE, prior.count = 2)
   cpm <- edgeR::cpm(dge, log = FALSE)
-  rpk <- sweep(count_data$counts, 1, count_data$lengths / 1000, "/")
+  rpk <- sweep(counts, 1, count_data$lengths / 1000, "/")
   tpm <- sweep(rpk, 2, colSums(rpk), "/") * 1e6
+  fpkm <- sweep(rpk, 2, colSums(counts), "/") * 1e6
+  keep_pca <- edgeR::filterByExpr(dge, group = groups)
+  if (sum(keep_pca) < 3L) stop("表达过滤后不足3个基因，不能进行样本关系分析")
   variable <- apply(log_cpm, 1, stats::sd) > 0
-  if (sum(variable) < 2L) stop("可变表达基因不足，无法进行PCA")
-  pca <- stats::prcomp(t(log_cpm[variable, , drop = FALSE]), center = TRUE, scale. = FALSE)
-  scores <- tibble::rownames_to_column(as.data.frame(pca$x[, 1:2, drop = FALSE]), "Sample")
+  if (sum(keep_pca & variable) < 2L) stop("可变表达基因不足，无法进行PCA")
+  pca <- stats::prcomp(t(log_cpm[keep_pca & variable, , drop = FALSE]), center = TRUE, scale. = isTRUE(settings$pca_scale))
+  scores <- tibble::rownames_to_column(as.data.frame(pca$x), "Sample")
   scores <- dplyr::left_join(scores, metadata, by = "Sample")
-  list(log_cpm = log_cpm, cpm = cpm, tpm = tpm, scores = scores,
-       variance = 100 * pca$sdev^2 / sum(pca$sdev^2), correlation = stats::cor(log_cpm),
-       library = tibble::tibble(Sample = colnames(cpm), LibrarySize = colSums(count_data$counts), Detected = colSums(count_data$counts > 0)))
+  list(counts = counts, lengths = count_data$lengths, log_cpm = log_cpm, cpm = cpm, tpm = tpm, fpkm = fpkm,
+       scores = scores, variance = 100 * pca$sdev^2 / sum(pca$sdev^2), keep_pca = keep_pca,
+       correlation = stats::cor(log_cpm[keep_pca, , drop = FALSE]),
+       library = tibble::tibble(Sample = colnames(counts), LibrarySize = colSums(counts), Detected = colSums(counts > 0),
+         ZeroProportion = colMeans(counts == 0), NormalizationFactor = dge$samples$norm.factors))
 }

@@ -36,6 +36,10 @@ write.table(data.frame(TERM = kegg_ids, NAME = paste("Synthetic KEGG", 1:6)), fi
             sep = "\t", quote = FALSE, row.names = FALSE)
 required <- file.path(fixtures, c("counts.tsv", "samples.tsv", "reference.gtf", "gene2go.tsv", "KEGG_TERM2GENE.tsv", "KEGG_TERM2NAME.tsv"))
 if (any(!file.exists(required))) stop("请在包含tests/fixtures的代码根目录执行")
+if ("--inputs-only" %in% commandArgs(TRUE)) {
+  cat("SYNTHETIC_INPUTS_GENERATED\n")
+  quit(save = "no", status = 0)
+}
 root <- tempfile("legacy_baseline_")
 dir.create(root)
 old_root <- Sys.getenv("TRANSCRIPTOME_PROJECT_DIR", unset = NA_character_)
@@ -88,3 +92,4 @@ write.table(dplyr::bind_rows(rows), file.path(fixtures, "legacy_enrichment_expec
 if (is.na(old_root)) Sys.unsetenv("TRANSCRIPTOME_PROJECT_DIR") else Sys.setenv(TRANSCRIPTOME_PROJECT_DIR = old_root)
 unlink(root, recursive = TRUE)
 cat("SYNTHETIC_BASELINES_GENERATED\n")
+

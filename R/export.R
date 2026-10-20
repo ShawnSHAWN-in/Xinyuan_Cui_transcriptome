@@ -1,14 +1,36 @@
+# 完整写入后替换正式文件
+commit_plot_path <- function(temporary, destination) {
+  size <- file.info(temporary)$size
+  if (is.na(size) || size < 20) stop("图像文件缺失或为空：", destination)
+  con <- file(temporary, "rb")
+  on.exit(close(con), add = TRUE)
+  header <- readBin(con, "raw", 8)
+  seek(con, where = max(0, size - 16), origin = "start")
+  tail <- readBin(con, "raw", 16)
+  if (tools::file_ext(destination) == "png") {
+    valid <- identical(header, as.raw(c(137, 80, 78, 71, 13, 10, 26, 10))) &&
+      identical(utils::tail(tail, 12), as.raw(c(0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130)))
+  } else valid <- identical(header[1:4], charToRaw("%PDF")) && any(vapply(seq_len(length(tail) - 4L), function(i) {
+    identical(tail[i:(i + 4L)], charToRaw("%%EOF"))
+  }, logical(1)))
+  if (!valid) stop("图像文件未完整关闭：", destination)
+  if (!file.rename(temporary, destination)) stop("无法替换图像：", destination)
+  destination
+}
+
 save_panel_files <- function(draw_panel, prefix, n_panels = 1L, ncol = 1L, width = 10, height = 7, settings) {
   dir.create(dirname(prefix), recursive = TRUE, showWarnings = FALSE)
   dpi <- min(settings$dpi, floor(sqrt(settings$max_pixels / (width * height))))
   if (!is.finite(dpi) || dpi < 1 || n_panels < 1) stop("导出尺寸或像素预算无效")
   paths <- paste0(prefix, c(".pdf", ".png"))
   for (i in seq_along(paths)) {
+    temporary <- tempfile(".plot_", tmpdir = dirname(prefix), fileext = ".part")
+    on.exit(unlink(temporary), add = TRUE)
     if (i == 1L) {
       device <- if (capabilities("cairo")) grDevices::cairo_pdf else grDevices::pdf
-      device(paths[i], width = width, height = height)
+      device(temporary, width = width, height = height)
     } else {
-      args <- list(filename = paths[i], width = width, height = height, units = "in", res = dpi)
+      args <- list(filename = temporary, width = width, height = height, units = "in", res = dpi)
       if (capabilities("cairo")) args$type <- "cairo"
       do.call(grDevices::png, args)
     }
@@ -29,6 +51,7 @@ save_panel_files <- function(draw_panel, prefix, n_panels = 1L, ncol = 1L, width
       }
       grid::popViewport()
     }, finally = grDevices::dev.off(device_id))
+    commit_plot_path(temporary, paths[i])
   }
   paths
 }
@@ -74,49 +97,16 @@ read_enrichment_record_lst <- function(files) {
   as.list(c(as.list(row[1, ]), list(object_file = files[basename(files) == "result.rds"])))
 }
 
-export_qc_files <- function(qc, metadata, display, style, settings, output_dir) {
-  dir <- file.path(output_dir, "03_sample_qc")
-  ordered <- sort_metadata_tbl(metadata, display$order_by)
-  paths <- write_table_path(dplyr::left_join(qc$library, metadata, by = "Sample"), file.path(dir, "library_statistics.tsv"))
-  paths <- c(paths, write_table_path(qc$scores, file.path(dir, "PCA_scores.tsv")))
-  for (name in c("cpm", "tpm", "log_cpm")) paths <- c(paths, write_table_path(tibble::rownames_to_column(as.data.frame(qc[[name]]), "Geneid"),
-                                                                                              file.path(dir, paste0(name, ".tsv"))))
-  paths <- c(paths, save_single_plot_files(plot_pca_plot(qc, metadata, display, style), file.path(dir, "01_PCA"), settings, 8, 7))
-  library <- dplyr::left_join(qc$library, metadata, by = "Sample")
-  library$Sample <- factor(library$Sample, levels = ordered$Sample)
-  p <- ggplot2::ggplot(library, ggplot2::aes(Sample, LibrarySize, fill = .data[[display$color_by]])) + ggplot2::geom_col() +
-    ggplot2::labs(title = "Library size", x = NULL) + theme_enrichment(style)
-  palette <- variable_palette(style, display$color_by, metadata[[display$color_by]])
-  if (!is.null(palette)) p <- p + ggplot2::scale_fill_manual(values = palette, drop = FALSE)
-  paths <- c(paths, save_single_plot_files(p, file.path(dir, "02_library_size"), settings, max(9, nrow(metadata) * 0.28), 6))
-  long <- as.data.frame(as.table(qc$log_cpm), stringsAsFactors = FALSE)
-  names(long) <- c("Geneid", "Sample", "Expression")
-  long <- dplyr::left_join(long, metadata, by = "Sample")
-  long$Sample <- factor(long$Sample, levels = ordered$Sample)
-  p <- ggplot2::ggplot(long, ggplot2::aes(Sample, Expression, fill = .data[[display$color_by]])) +
-    ggplot2::geom_boxplot(outlier.shape = NA) + ggplot2::labs(title = "logCPM distribution", y = "logCPM", x = NULL) + theme_enrichment(style)
-  if (!is.null(palette)) p <- p + ggplot2::scale_fill_manual(values = palette, drop = FALSE)
-  paths <- c(paths, save_single_plot_files(p, file.path(dir, "03_expression_boxplot"), settings, max(9, nrow(metadata) * 0.28), 6))
-  correlation <- qc$correlation[ordered$Sample, ordered$Sample]
-  paths <- c(paths, save_single_plot_files(pheatmap::pheatmap(correlation, cluster_rows = FALSE, cluster_cols = FALSE, border_color = NA,
-    main = "Sample correlation", silent = TRUE)$gtable, file.path(dir, "04_correlation"), settings, 12, 11))
-  tree <- stats::hclust(stats::dist(t(qc$log_cpm)))
-  dendro <- ggdendro::dendro_data(tree)
-  p <- ggplot2::ggplot(ggdendro::segment(dendro)) + ggplot2::geom_segment(ggplot2::aes(x, y, xend = xend, yend = yend)) +
-    ggplot2::scale_x_continuous(breaks = dendro$labels$x, labels = dendro$labels$label) +
-    ggplot2::labs(title = "Sample clustering", x = NULL, y = "Distance") + theme_enrichment(style)
-  paths <- c(paths, save_single_plot_files(p, file.path(dir, "05_clustering"), settings, max(10, nrow(metadata) * 0.28), 7))
-  paths
-}
-
-export_deg_plot_files <- function(result, thresholds, style, settings, output_dir) {
+export_deg_plot_files <- function(result, thresholds, engine_files, settings, output_dir, limits) {
   dir <- file.path(output_dir, "04_differential_expression", safe_id(result$job$id))
-  unlist(lapply(c("volcano", "rank", "ma"), function(type) save_single_plot_files(plot_deg_plot(result, thresholds, style, type),
+  context <- new_legacy_context(engine_files, list(direction_colors = legacy_deg_colors()))
+  unlist(lapply(c("volcano", "rank", "ma"), function(type) save_single_plot_files(plot_deg_plot(result, thresholds, type, context, limits),
     file.path(dir, paste0("plot_", type)), settings, 8, 7)), use.names = FALSE)
 }
 
-export_deg_combined_files <- function(results, thresholds, style, settings, output_dir, display = NULL) {
+export_deg_combined_files <- function(results, thresholds, engine_files, settings, output_dir, display = NULL, limits = NULL) {
   if (!is.null(display)) results <- order_comparison_results_lst(results, display$compare_by)
+  context <- new_legacy_context(engine_files, list(direction_colors = legacy_deg_colors()))
   paths <- character()
   schemes <- unique(vapply(results, function(x) x$job$scheme, character(1)))
   for (scheme in schemes) {
@@ -125,7 +115,7 @@ export_deg_combined_files <- function(results, thresholds, style, settings, outp
     for (type in c("volcano", "rank", "ma")) {
       for (page in seq_along(pages)) {
         indices <- pages[[page]]
-        paths <- c(paths, save_panel_files(function(i) plot_deg_plot(items[[indices[i]]], thresholds, style, type),
+        paths <- c(paths, save_panel_files(function(i) plot_deg_plot(items[[indices[i]]], thresholds, type, context, limits),
           file.path(output_dir, "09_combined_figures", paste0("DEG_", safe_id(scheme), "_", type, "_", page)), length(indices),
           settings$combine_columns, 24, ceiling(length(indices) / settings$combine_columns) * 7, settings))
       }
@@ -229,3 +219,4 @@ export_comparative_combined_files <- function(catalog, selections, jobs, thresho
   }
   paths
 }
+

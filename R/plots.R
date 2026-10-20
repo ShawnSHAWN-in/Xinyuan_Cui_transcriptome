@@ -6,15 +6,18 @@ plot_pca_plot <- function(qc, metadata, display, style) {
   if (use_shape && is.numeric(metadata[[shape_by]])) stop("形状变量必须为分类变量，请使用Time_f")
   df <- dplyr::left_join(qc$scores[, c("Sample", "PC1", "PC2")], metadata, by = "Sample")
   p <- ggplot2::ggplot(df, ggplot2::aes(x = PC1, y = PC2, color = .data[[color_by]])) +
-    ggplot2::geom_point(size = 3, alpha = 0.9) +
-    ggplot2::labs(title = "PCA", x = sprintf("PC1 (%.1f%%)", qc$variance[1]), y = sprintf("PC2 (%.1f%%)", qc$variance[2])) + theme_pca(style)
+    ggplot2::geom_point(size = 3) +
+    ggplot2::labs(title = "Global PCA: logCPM", x = paste0("PC1 (", round(qc$variance[1], 2), "%)"),
+                  y = paste0("PC2 (", round(qc$variance[2], 2), "%)")) +
+    ggplot2::theme_bw() + ggplot2::theme(panel.grid = ggplot2::element_blank())
   palette <- variable_palette(style, color_by, df[[color_by]])
   if (!is.null(palette)) p <- p + ggplot2::scale_color_manual(values = palette, drop = FALSE)
   if (use_shape) {
     shape_levels <- if (is.factor(df[[shape_by]])) levels(df[[shape_by]]) else unique(as.character(df[[shape_by]]))
     n_shapes <- length(shape_levels)
     if (n_shapes > 25L) stop("形状水平超过25，请调整PCA映射")
-    p <- p + ggplot2::aes(shape = .data[[shape_by]]) + ggplot2::scale_shape_manual(values = stats::setNames(seq_len(n_shapes) - 1L, shape_levels), drop = FALSE)
+    shapes <- stats::setNames(rep(c(16, 17, 15, 18, 0:14, 19:25), length.out = n_shapes), shape_levels)
+    p <- p + ggplot2::aes(shape = .data[[shape_by]]) + ggplot2::scale_shape_manual(values = shapes, drop = FALSE)
   }
   facets <- as.character(unlist(display$facet_by))
   if (length(facets)) {
@@ -24,25 +27,35 @@ plot_pca_plot <- function(qc, metadata, display, style) {
   p
 }
 
-plot_deg_plot <- function(result, thresholds, style, type) {
-  tbl <- result$table
-  tbl$Direction <- ifelse(is.finite(tbl$padj) & tbl$padj < thresholds$fdr & abs(tbl$logFC) >= thresholds$abs_logfc,
-                          ifelse(tbl$logFC > 0, "Up", "Down"), "Not")
-  tbl$Significance <- -log10(pmax(tbl$padj, .Machine$double.xmin))
-  if (type == "volcano") {
-    p <- ggplot2::ggplot(tbl, ggplot2::aes(logFC, Significance, color = Direction)) +
-      ggplot2::geom_point(size = 1.2, alpha = 0.7) + ggplot2::geom_vline(xintercept = c(-1, 1) * thresholds$abs_logfc, linetype = 4) +
-      ggplot2::geom_hline(yintercept = -log10(thresholds$fdr), linetype = 4) + ggplot2::labs(x = "log2 fold change", y = "−log10(FDR)")
-  } else if (type == "ma") {
-    p <- ggplot2::ggplot(tbl, ggplot2::aes(logCPM, logFC, color = Direction)) + ggplot2::geom_point(size = 1.2, alpha = 0.7) +
-      ggplot2::labs(x = "Average logCPM", y = "log2 fold change")
-  } else {
-    tbl <- tbl[order(-tbl$logFC), , drop = FALSE]
-    tbl$Rank <- seq_len(nrow(tbl))
-    p <- ggplot2::ggplot(tbl, ggplot2::aes(Rank, logFC, color = Direction)) + ggplot2::geom_point(size = 1.2, alpha = 0.7)
+# 沿用旧版标签和配色
+plot_deg_plot <- function(result, thresholds, type, context, limits = NULL) {
+  tbl <- as.data.frame(result$table)
+  if (!"SYMBOL" %in% names(tbl)) tbl$SYMBOL <- tbl$Geneid
+  tbl$SYMBOL <- ifelse(is.na(tbl$SYMBOL) | tbl$SYMBOL == "", as.character(tbl$Geneid), as.character(tbl$SYMBOL))
+  tbl$padj <- pmax(tbl$padj, .Machine$double.xmin)
+  p <- context$run_deg_visualization(list(deg_tbl = tbl, contrast_names = result$job$comparison),
+    type = type, label_top_n = 8, out_dir = NULL, pvalue_cutoff = thresholds$fdr, logFC_cutoff = thresholds$abs_logfc)
+  p <- p + ggplot2::labs(title = result$job$comparison) + ggplot2::theme(panel.grid = ggplot2::element_blank())
+  if (!is.null(limits)) {
+    limit <- limits[[result$job$scheme]]
+    if (type == "volcano") p <- p + ggplot2::coord_cartesian(xlim = c(-limit$effect, limit$effect), ylim = c(0, limit$significance))
+    if (type %in% c("ma", "rank")) p <- p + ggplot2::coord_cartesian(ylim = c(-limit$effect, limit$effect))
   }
-  p + ggplot2::scale_color_manual(values = unlist(style$direction_colors), drop = FALSE) +
-    ggplot2::labs(title = result$job$comparison) + theme_project(style)
+  p
+}
+
+legacy_deg_colors <- function() c(Up = "#C94C4C", Down = "#377EB8", Not = "#C9C9C9")
+
+calculate_deg_plot_limits_lst <- function(results) {
+  schemes <- unique(vapply(results, function(x) x$job$scheme, character(1)))
+  stats::setNames(lapply(schemes, function(scheme) {
+    items <- Filter(function(x) x$job$scheme == scheme, results)
+    effects <- unlist(lapply(items, function(x) x$table$logFC))
+    fdr <- unlist(lapply(items, function(x) x$table$padj))
+    effect <- max(c(0, abs(effects[is.finite(effects)]))) * 1.05
+    significance <- max(c(0, -log10(pmax(fdr[is.finite(fdr)], .Machine$double.xmin)))) * 1.05
+    list(effect = if (effect > 0) effect else 1, significance = if (significance > 0) significance else 1)
+  }), schemes)
 }
 
 ratio_vec <- function(values) {
@@ -124,3 +137,4 @@ plot_enrichment_pair_plot <- function(up, down, thresholds, display, style, type
   p + ggplot2::scale_y_discrete(labels = function(x) stringr::str_wrap(labels[x], 50), drop = FALSE) + ggplot2::labs(title = title, y = NULL) +
     theme_project(style)
 }
+
