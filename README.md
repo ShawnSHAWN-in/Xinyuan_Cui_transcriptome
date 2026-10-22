@@ -55,11 +55,62 @@
 - Script_Transcript_Upstream_0_source_environment.sh — 环境与目录变量
 - lib_transcriptome.sh — 常用函数（下载、hisat2 流程、featureCounts、Trinity）
 - transcriptome_pipeline.sh — 主流水线，子命令化组织（download/preprocess/align/count/de/trinity/all）
+- transcript_pipeline_module.R — R 语言模块化转录组分析框架（DE/富集/可视化）
+- transcript_pipeline_module_dependencies.md — R 模块的包依赖清单与安装指南
 - README.md — 你正在阅读的博客风说明
 
 ---
 
+## R 语言分析模块（下游分析）
+
+本仓库还提供了一个模块化的 R 语言转录组分析框架 `transcript_pipeline_module.R`，用于下游分析：
+
+### 主要功能
+- 数据模型：基于 SummarizedExperiment 管理表达数据
+- 标准化：支持 TPM, FPKM, edgeR, DESeq2 多种方法
+- 差异分析：edgeR 和 DESeq2 差异表达分析
+- 注释服务：支持 NCBI GTF, OrgDb, AnnotationHub
+- 富集分析：GSEA, ORA (KEGG/GO)
+- 可视化：火山图、MA图、PCA、热图、箱线图、UpSet图等
+
+### 快速使用示例
+
+```r
+# 加载模块
+source("transcript_pipeline_module.R")
+
+# 创建 pipeline helper
+ph <- PipelineHelper$new()
+
+# 构建数据模型
+se <- ph$build_se(
+  counts_path = "02.Quant_定量结果/result_count.with_Length.tsv",
+  groups_path = "02.Quant_定量结果/GroupSamples.txt"
+)
+
+# 计算 TPM 和 FPKM
+ph$compute_and_attach_TPM()
+ph$compute_and_attach_FPKM()
+
+# 差异分析
+res <- ph$run_edgeR_for_groups("Treatment", "Control", 
+                                out_dir = "04.Differential_差异分析结果")
+
+# 可视化
+ph$plot_pca(assay = "TPM", out_file = "PCA_plot.png")
+ph$plot_volcano(res$tbl, out_file = "volcano_plot.png")
+```
+
+### 依赖包安装
+
+该模块依赖 26 个 R 包。详细的包列表、用途说明和安装脚本请参见：
+- **[transcript_pipeline_module_dependencies.md](transcript_pipeline_module_dependencies.md)** — 完整的包依赖清单与安装指南
+
+---
+
 ## 常见操作举例
+
+### Bash 流水线操作
 
 - 仅下载 SRR 列表：
   - ./transcriptome_pipeline.sh download -l list_file -t 6
