@@ -28,7 +28,8 @@ launch_console <- function(code_dir = getwd(), data_dir = Sys.getenv("TRANSCRIPT
     ready <- FALSE
     deadline <- Sys.time() + 25
     while (process$is_alive() && Sys.time() < deadline) {
-      connection <- tryCatch(socketConnection("127.0.0.1", port = port, open = "r+b", blocking = TRUE, timeout = 0.2), error = function(e) NULL)
+      connection <- tryCatch(suppressWarnings(socketConnection("127.0.0.1", port = port, open = "r+b", blocking = TRUE, timeout = 0.2)),
+        error = function(e) NULL)
       if (!is.null(connection)) {
         close(connection)
         ready <- TRUE

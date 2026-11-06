@@ -9,8 +9,13 @@ testthat::test_that("配置快照稳定且不修改原配置", {
   testthat::expect_identical(before, readLines(source_file))
   testthat::expect_error(console_effective_config_lst(fixture$context, list(fdr = 2)), "FDR")
   testthat::expect_error(console_effective_config_lst(fixture$context, list(abs_logfc = -1)), "log2FC")
+  testthat::expect_error(console_effective_config_lst(fixture$context, list(top_terms = 1.5)), "正整数")
   testthat::expect_error(console_module_targets_vec("missing"), "模块")
   testthat::expect_setequal(console_module_targets_vec("deg_plots"), c("deg_plot_files", "deg_combined_files"))
+  source <- paste(readLines(file.path(project_root, "_targets.R")), collapse = "\n")
+  names <- regmatches(source, gregexpr("tar_target\\([A-Za-z_]+", source))[[1]]
+  names <- sub("tar_target\\(", "", names)
+  testthat::expect_true(all(console_module_targets_vec(names(console_modules_lst())) %in% names))
 })
 
 testthat::test_that("输入校验复用实际分组和比较逻辑", {

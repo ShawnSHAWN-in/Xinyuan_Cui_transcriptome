@@ -159,7 +159,7 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
     output$preview_ui <- shiny::renderUI({
       file <- selected_file()
       ext <- tolower(tools::file_ext(file))
-      if (ext == "png" && file.info(file)$size <= 20 * 1024^2) return(shiny::tags$div(class = "result-image", shiny::imageOutput("image")))
+      if (ext == "png" && file.info(file)$size <= 20 * 1024^2) return(shiny::tags$div(class = "result-image", shiny::imageOutput("image", height = "auto")))
       if (ext %in% c("tsv", "csv")) return(shiny::tableOutput("table"))
       if (ext %in% c("txt", "md")) return(shiny::verbatimTextOutput("text"))
       shiny::tags$p("请下载查看该文件。")

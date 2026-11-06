@@ -52,13 +52,13 @@ console_effective_config_lst <- function(context, overrides = list()) {
   for (field in intersect(names(overrides), names(config$paths))) config$paths[[field]] <- overrides[[field]]
   if (!is.null(overrides$fdr)) config$analysis$filter$fdr <- as.numeric(overrides$fdr)
   if (!is.null(overrides$abs_logfc)) config$analysis$filter$abs_logfc <- as.numeric(overrides$abs_logfc)
-  if (!is.null(overrides$top_terms)) config$figures$display$top_terms <- as.integer(overrides$top_terms)
+  if (!is.null(overrides$top_terms)) config$figures$display$top_terms <- as.numeric(overrides$top_terms)
   fdr <- config$analysis$filter$fdr
   logfc <- config$analysis$filter$abs_logfc
   top <- config$figures$display$top_terms
   if (length(fdr) != 1L || !is.finite(fdr) || fdr <= 0 || fdr > 1) stop("FDR须在 (0, 1] 内")
   if (length(logfc) != 1L || !is.finite(logfc) || logfc < 0) stop("|log2FC|阈值须为非负数")
-  if (length(top) != 1L || !is.finite(top) || top < 1) stop("展示条目数须为正整数")
+  if (length(top) != 1L || !is.finite(top) || top < 1 || top != round(top)) stop("展示条目数须为正整数")
   config
 }
 
