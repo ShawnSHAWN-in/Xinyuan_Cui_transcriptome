@@ -1,5 +1,16 @@
 # Calicivirus transcriptome · targets 工程
 
+## RStudio Server 控制台（试验分支）
+
+新增MVP支持输入/环境检查、模块选择、后台启动/停止、日志和结果预览。使用方式：
+
+```r
+source("scripts/console.R")
+launch_console()
+```
+
+先安装控制台依赖，或安装可选Addin菜单入口；完整说明与服务器验收步骤见 [docs/CONSOLE_MVP.md](docs/CONSOLE_MVP.md)。界面配置保存为独立快照，继续使用原targets缓存与分析函数。
+
 复用现有R6转录组基座，以targets组织输入、分组、九个默认比较、GO-BP/KEGG富集、原始风格绘图和组合导出。统计与绘图分离，结果缓存由targets管理。
 
 ## 快速运行

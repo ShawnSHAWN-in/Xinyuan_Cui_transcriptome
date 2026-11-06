@@ -16,3 +16,6 @@ gene2go.gz
 # 合成分析结果在本地生成
 tests/fixtures/*.tsv
 tests/fixtures/*.gtf
+
+# 控制台运行记录与配置快照
+.console/

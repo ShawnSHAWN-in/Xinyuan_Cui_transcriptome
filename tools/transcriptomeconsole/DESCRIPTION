@@ -1,0 +1,8 @@
+Package: transcriptomeconsole
+Title: RStudio Entry for the Transcriptome Console
+Version: 0.0.1
+Authors@R: person("Transcriptome", "Contributors", role = c("aut", "cre"), email = "codex@openai.com")
+Description: Opens the experimental project-local Shiny console from the RStudio Addins menu. Analysis stays in the project repository.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports: rstudioapi
