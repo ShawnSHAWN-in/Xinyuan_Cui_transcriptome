@@ -2,6 +2,8 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
   context <- console_context_lst(code_dir, data_dir, config_dir)
   initial <- console_read_config_lst(context$config_dir)
   controller <- console_new_controller()
+  available_cores <- console_available_cores()
+  has_graph <- requireNamespace("visNetwork", quietly = TRUE)
   modules <- console_modules_lst()
   module_choices <- stats::setNames(names(modules), vapply(modules, `[[`, character(1), "label"))
   ui <- shiny::fluidPage(
@@ -49,10 +51,25 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
         shiny::fluidRow(shiny::column(4, shiny::wellPanel(shiny::tags$div(class = "freeze",
           shiny::checkboxInput("run_all", "运行完整工程（包含汇总）", FALSE),
           shiny::checkboxGroupInput("modules", "选择模块", choices = module_choices, selected = "qc"),
+          shiny::checkboxInput("manual_selection", "高级：按target名称选择", FALSE),
+          shiny::selectizeInput("target_names", "指定targets（先生成依赖预览）", choices = character(), multiple = TRUE),
+          shiny::tags$h4("targets 执行选项"),
+          shiny::tags$p(class = "muted", paste("检测到可用CPU：", available_cores, "；worker数×线程数不得超过此值。")),
+          shiny::numericInput("workers", "并行worker数（独立R进程）", 1, min = 1, max = available_cores, step = 1),
+          shiny::numericInput("threads_per_worker", "每worker线程上限", 1, min = 1, max = available_cores, step = 1),
+          shiny::tags$p(class = "muted", "并行worker使用crew。线程上限作用于data.table及支持环境变量的BLAS/OpenMP库；GSEA内部仍串行。"),
+          shiny::selectInput("reporter", "日志级别", c("逐任务" = "verbose", "带时间戳" = "timestamp", "平衡" = "balanced",
+            "精简" = "terse", "静默" = "silent")),
+          shiny::selectInput("error", "错误策略", c("遇错停止" = "stop", "继续独立任务" = "continue")),
+          shiny::selectInput("memory", "内存策略", c("及时释放" = "transient", "自动" = "auto", "保留对象" = "persistent")),
+          shiny::numericInput("garbage_collection", "每多少个target执行一次GC（0关闭）", 0, min = 0, step = 1),
+          shiny::checkboxInput("shortcut", "shortcut：假定上游已更新，跳过上游检查", FALSE),
           shiny::actionButton("start", "启动分析", class = "btn-primary")),
           shiny::actionButton("stop", "停止当前任务", class = "btn-danger"),
           shiny::tags$p(class = "muted", "模块运行包含必要的上游依赖。停止会保留已完成缓存；再次启动时检查并补算。"))),
-          shiny::column(8, shiny::tags$h4("实时日志 · 最近200行"), shiny::verbatimTextOutput("log"))),
+          shiny::column(8, shiny::tags$h4("实时日志 · 最近200行"), shiny::verbatimTextOutput("log"),
+            shiny::tags$h4("crew worker 日志"), shiny::selectInput("crew_file", "选择worker日志", character()),
+            shiny::verbatimTextOutput("crew_log"))),
         shiny::tags$h4("targets 任务状态"), shiny::tableOutput("progress"),
         shiny::tags$p(class = "muted", "状态表最多显示200项，不将任务计数换算为剩余运行时间。")),
       shiny::tabPanel("4 · 结果浏览", value = "results",
@@ -61,11 +78,21 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
         shiny::fluidRow(shiny::column(4, shiny::selectInput("format", "文件类型", c("全部", "png", "pdf", "tsv", "csv", "txt", "md")),
           shiny::textInput("search", "按路径筛选"), shiny::selectInput("result_file", "选择文件", character()),
           shiny::downloadButton("download", "下载所选文件")),
-          shiny::column(8, shiny::textOutput("result_path"), shiny::uiOutput("preview_ui"))))
+          shiny::column(8, shiny::textOutput("result_path"), shiny::uiOutput("preview_ui")))),
+      shiny::tabPanel("5 · 依赖关系与运行预览", value = "graph",
+        shiny::tags$div(class = "freeze", shiny::checkboxInput("graph_all", "展示整个工程（否则使用运行页的目标选择）", TRUE),
+          shiny::checkboxInput("graph_outdated", "检查待更新targets（可能读取文件校验信息）", FALSE),
+          shiny::actionButton("refresh_graph", "生成依赖预览", class = "btn-primary")),
+        shiny::tags$p(class = "muted", "预览在独立进程生成，不执行分析target。图像为生成时的状态快照，可缩放并点击节点查看关联。"),
+        shiny::textOutput("plan_note"),
+        if (has_graph) visNetwork::visNetworkOutput("dependency_graph", height = "700px") else shiny::tags$p("请安装visNetwork后重启控制台。"),
+        shiny::tags$h4("target清单（前200项）"), shiny::tableOutput("manifest"))
     )
   )
   server <- function(input, output, session) {
     app_controller <- controller
+    plan_value <- shiny::reactiveVal(NULL)
+    crew_choices <- shiny::reactiveVal(character())
     config_note <- shiny::reactiveVal("尚未保存配置或检查输入。")
     result_root <- shiny::reactiveVal(NULL)
     result_files <- shiny::reactiveVal(data.frame(Path = character(), Format = character(), Bytes = numeric()))
@@ -74,13 +101,26 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
       ctx <- console_context_lst(context$code_dir, input$data_dir, input$config_dir)
       fields <- c("count_file", "sample_file", "gtf_file", "gene2go_file", "output_dir", "fdr", "abs_logfc", "top_terms")
       overrides <- stats::setNames(lapply(fields, function(field) input[[field]]), fields)
-      list(context = ctx, config = console_effective_config_lst(ctx, overrides))
+      execution_fields <- c("workers", "threads_per_worker", "reporter", "shortcut", "memory", "garbage_collection", "error", "graph_outdated")
+      execution <- stats::setNames(lapply(execution_fields, function(field) input[[field]]), execution_fields)
+      execution <- Filter(Negate(is.null), execution)
+      list(context = ctx, config = console_effective_config_lst(ctx, overrides), execution = console_execution_lst(execution))
     }
     notify_error <- function(e) shiny::showNotification(conditionMessage(e), type = "error", duration = 10)
     shiny::observe({
       status <- tick()
       session$sendCustomMessage("consoleBusy", identical(status$state, "RUNNING"))
       if (!is.null(controller$report)) result_root(controller$report$output_dir)
+      if (!is.null(controller$plan)) plan_value(controller$plan)
+      files <- if (is.null(controller$run_dir)) character() else {
+        head(list.files(file.path(controller$run_dir, "crew"), recursive = TRUE), 100L)
+      }
+      if (!identical(files, shiny::isolate(crew_choices()))) {
+        crew_choices(files)
+        selected <- shiny::isolate(input$crew_file)
+        if (!length(selected) || !selected %in% files) selected <- head(files, 1L)
+        shiny::updateSelectInput(session, "crew_file", choices = files, selected = selected)
+      }
     })
     output$status <- shiny::renderUI({
       status <- tick()
@@ -111,13 +151,17 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
     start <- function(action) {
       tryCatch({
         request <- current_request()
-        run_dir <- console_start_run(controller, request$context, request$config, action, input$modules, input$run_all)
+        all <- isTRUE(input$run_all) || (action == "plan" && isTRUE(input$graph_all))
+        selected <- if (!all && isTRUE(input$manual_selection)) as.character(input$target_names) else NULL
+        run_dir <- console_start_run(controller, request$context, request$config, action, input$modules, all,
+          execution = request$execution, target_names = selected)
         config_note(paste("本次记录：", run_dir))
-        shiny::updateTabsetPanel(session, "page", selected = "run")
+        shiny::updateTabsetPanel(session, "page", selected = if (action == "plan") "graph" else "run")
       }, error = notify_error)
     }
     shiny::observeEvent(input$check, start("check"))
     shiny::observeEvent(input$start, start("build"))
+    shiny::observeEvent(input$refresh_graph, start("plan"))
     shiny::observeEvent(input$stop, tryCatch(console_stop_run(controller), error = notify_error))
     output$config_note <- shiny::renderText(config_note())
     report <- shiny::reactive({ tick(); controller$report })
@@ -129,6 +173,29 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
       tick()
       if (is.null(controller$run_dir)) "选择模块后启动分析，或先检查输入。" else console_log_tail(file.path(controller$run_dir, "run.log"))
     })
+    output$crew_log <- shiny::renderText({
+      tick()
+      if (is.null(controller$run_dir) || !length(input$crew_file) || !nzchar(input$crew_file)) return("暂无worker日志；串行运行不启动crew。")
+      root <- file.path(controller$run_dir, "crew")
+      if (!dir.exists(root)) return("暂无worker日志。")
+      console_log_tail(console_result_path(root, input$crew_file))
+    })
+    shiny::observeEvent(plan_value(), {
+      choices <- plan_value()$manifest$name
+      selected <- intersect(shiny::isolate(input$target_names), choices)
+      shiny::updateSelectizeInput(session, "target_names", choices = choices, selected = selected, server = TRUE)
+    })
+    output$plan_note <- shiny::renderText({
+      plan <- plan_value()
+      if (is.null(plan)) return("尚未生成依赖预览。")
+      paste("生成于", format(plan$created), "；图中target数：", sum(plan$manifest$In_graph),
+        "；待更新数：", if (is.null(plan$outdated)) "未检查" else length(plan$outdated))
+    })
+    output$manifest <- shiny::renderTable({
+      shiny::req(plan_value())
+      head(plan_value()$manifest[, c("name", "Selected", "In_graph", "Outdated"), drop = FALSE], 200L)
+    })
+    if (has_graph) output$dependency_graph <- visNetwork::renderVisNetwork({ shiny::req(plan_value()); plan_value()$graph })
     output$progress <- shiny::renderTable({
       tick()
       if (!requireNamespace("targets", quietly = TRUE) || !dir.exists(context$store)) return(NULL)

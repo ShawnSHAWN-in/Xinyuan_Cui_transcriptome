@@ -6,7 +6,7 @@ launch_console <- function(code_dir = getwd(), data_dir = Sys.getenv("TRANSCRIPT
     stop("port须为1至65535的整数，或NULL（随机端口）")
   }
   if (!is.logical(background) || length(background) != 1L || is.na(background)) stop("background须为TRUE或FALSE")
-  packages <- c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "httpuv")
+  packages <- c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "httpuv", "parallelly")
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing)) stop("请先安装控制台依赖：", paste(missing, collapse = ", "))
   helper <- new.env(parent = globalenv())

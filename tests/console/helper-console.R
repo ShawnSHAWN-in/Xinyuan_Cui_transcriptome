@@ -18,7 +18,7 @@ console_fixture <- function() {
   writeLines("annotation fixture", file.path(root, "gene2go.tsv"))
   paths <- list(count_file = "counts.tsv", sample_file = "samples.tsv", gtf_file = "reference.gtf", gene2go_file = "gene2go.tsv", output_dir = "output")
   yaml::write_yaml(paths, file.path(root, "config", "paths.yml"))
-  writeLines(c("list(targets::tar_target(qc_files, {",
+  writeLines(c("sys.source('R/runtime.R', envir = environment())", "configure_targets_runtime()", "list(targets::tar_target(qc_files, {",
     "paths <- yaml::read_yaml(file.path(Sys.getenv('TRANSCRIPTOME_CONFIG_DIR'), 'paths.yml'))",
     "out <- file.path(Sys.getenv('TRANSCRIPTOME_PROJECT_DIR'), paths$output_dir)",
     "dir.create(out, recursive = TRUE, showWarnings = FALSE)",

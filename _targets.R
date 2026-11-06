@@ -1,9 +1,9 @@
 # 以项目根目录启动
 if (!requireNamespace("targets", quietly = TRUE)) stop("请先安装targets：install.packages('targets')")
 targets::tar_source("R")
-data.table::setDTthreads(1L)
 config_dir <- Sys.getenv("TRANSCRIPTOME_CONFIG_DIR", unset = "config")
 targets::tar_option_set(packages = c("edgeR", "ggplot2", "data.table"), memory = "transient", garbage_collection = FALSE, error = "stop")
+configure_targets_runtime()
 
 list(
   targets::tar_target(paths_config_file, file.path(config_dir, "paths.yml"), format = "file"),

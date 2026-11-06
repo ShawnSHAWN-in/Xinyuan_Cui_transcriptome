@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [rstudio-console-mvp-20261106]
-    paths: ['console/**', 'scripts/console.R', 'tools/transcriptomeconsole/**', 'tests/console/**', 'tests/run_console_tests.R', '.github/workflows/console-mvp.yml']
+    paths: ['console/**', 'R/runtime.R', '_targets.R', 'scripts/console.R', 'tools/transcriptomeconsole/**', 'tests/console/**', 'tests/run_console_tests.R', '.github/workflows/console-mvp.yml']
   pull_request:
-    paths: ['console/**', 'scripts/console.R', 'tools/transcriptomeconsole/**', 'tests/console/**', 'tests/run_console_tests.R', '.github/workflows/console-mvp.yml']
+    paths: ['console/**', 'R/runtime.R', '_targets.R', 'scripts/console.R', 'tools/transcriptomeconsole/**', 'tests/console/**', 'tests/run_console_tests.R', '.github/workflows/console-mvp.yml']
 
 permissions:
   contents: read
@@ -28,7 +28,7 @@ jobs:
       - name: Install console test dependencies
         shell: Rscript {0}
         run: |
-          install.packages(c('shiny', 'callr', 'yaml', 'filelock', 'digest', 'data.table', 'tibble', 'dplyr', 'targets', 'testthat', 'rstudioapi'))
+          install.packages(c('shiny', 'callr', 'yaml', 'filelock', 'digest', 'data.table', 'tibble', 'dplyr', 'targets', 'testthat', 'rstudioapi', 'crew', 'parallelly', 'visNetwork'))
           loadNamespace('targets')
           sessionInfo()
       - name: Test console lifecycle and targets integration

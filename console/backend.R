@@ -22,6 +22,43 @@ console_module_targets_vec <- function(modules, all = FALSE) {
   unique(unlist(lapply(catalog[modules], `[[`, "targets"), use.names = FALSE))
 }
 
+console_available_cores <- function() {
+  if (!requireNamespace("parallelly", quietly = TRUE)) return(1L)
+  as.integer(parallelly::availableCores())
+}
+
+console_execution_lst <- function(settings = list(), available = console_available_cores()) {
+  result <- utils::modifyList(list(workers = 1L, threads_per_worker = 1L, reporter = "verbose", shortcut = FALSE,
+    memory = "transient", garbage_collection = 0L, error = "stop", graph_outdated = FALSE), settings)
+  if (length(setdiff(names(settings), names(result))) || length(setdiff(names(result), c("workers", "threads_per_worker", "reporter", "shortcut",
+      "memory", "garbage_collection", "error", "graph_outdated")))) stop("未知执行选项")
+  for (name in c("workers", "threads_per_worker", "garbage_collection")) {
+    value <- result[[name]]
+    minimum <- if (name == "garbage_collection") 0 else 1
+    if (!is.numeric(value) || length(value) != 1L || !is.finite(value) || value < minimum || value != round(value)) stop("执行参数须为整数：", name)
+    result[[name]] <- as.integer(value)
+  }
+  if (result$workers * result$threads_per_worker > available) stop("worker数×每worker线程数不能超过当前检测到的可用CPU数：", available)
+  for (name in c("shortcut", "graph_outdated")) {
+    if (!is.logical(result[[name]]) || length(result[[name]]) != 1L || is.na(result[[name]])) stop("执行参数须为TRUE或FALSE：", name)
+  }
+  choices <- list(reporter = c("verbose", "timestamp", "balanced", "terse", "silent"), memory = c("transient", "auto", "persistent"),
+    error = c("stop", "continue"))
+  for (name in names(choices)) {
+    if (!is.character(result[[name]]) || length(result[[name]]) != 1L || !result[[name]] %in% choices[[name]]) stop("执行参数取值错误：", name)
+  }
+  result
+}
+
+console_execution_env <- function(execution) {
+  threads <- as.character(execution$threads_per_worker)
+  c(TRANSCRIPTOME_WORKERS = as.character(execution$workers), TRANSCRIPTOME_THREADS_PER_WORKER = threads,
+    TRANSCRIPTOME_TARGETS_MEMORY = execution$memory, TRANSCRIPTOME_TARGETS_ERROR = execution$error,
+    TRANSCRIPTOME_GC_INTERVAL = as.character(execution$garbage_collection), OMP_NUM_THREADS = threads, OMP_THREAD_LIMIT = threads,
+    OPENBLAS_NUM_THREADS = threads, MKL_NUM_THREADS = threads, BLIS_NUM_THREADS = threads, VECLIB_MAXIMUM_THREADS = threads,
+    R_DATATABLE_NUM_THREADS = threads)
+}
+
 console_absolute_path <- function(path, root = getwd(), must_work = TRUE) {
   if (length(path) != 1L || is.na(path) || !nzchar(trimws(path))) stop("路径不能为空")
   path <- path.expand(path)
@@ -136,6 +173,7 @@ console_new_controller <- function() {
   controller$error <- ""
   controller$context <- NULL
   controller$report <- NULL
+  controller$plan <- NULL
   controller
 }
 
@@ -147,6 +185,8 @@ console_poll_lst <- function(controller) {
     controller$error <- if (inherits(result, "error")) conditionMessage(result) else ""
     file <- file.path(controller$run_dir, "validation.rds")
     if (file.exists(file)) controller$report <- readRDS(file)
+    file <- file.path(controller$run_dir, "plan.rds")
+    if (file.exists(file) && !inherits(result, "error")) controller$plan <- readRDS(file)
     saveRDS(list(state = controller$state, error = controller$error, finished = Sys.time()), file.path(controller$run_dir, "result.rds"))
     if (!is.null(controller$lock)) filelock::unlock(controller$lock)
     controller$lock <- NULL
@@ -155,11 +195,20 @@ console_poll_lst <- function(controller) {
        pid = if (is.null(process)) NA_integer_ else process$get_pid())
 }
 
-console_start_run <- function(controller, context, config, action = "check", modules = character(), all = FALSE) {
+console_start_run <- function(controller, context, config, action = "check", modules = character(), all = FALSE,
+                              execution = list(), target_names = NULL) {
   console_poll_lst(controller)
   if (controller$state == "RUNNING") stop("本工程已有运行中的任务")
-  if (!action %in% c("check", "build")) stop("未知操作")
-  selected <- if (action == "build") console_module_targets_vec(modules, all) else character()
+  if (!action %in% c("check", "build", "plan")) stop("未知操作")
+  execution <- console_execution_lst(execution)
+  if (!is.null(target_names) && (!is.character(target_names) || !length(target_names) || anyNA(target_names) || any(!nzchar(target_names)))) {
+    stop("请选择至少一个target")
+  }
+  selected <- if (action == "check") character() else if (isTRUE(all)) NULL else if (!is.null(target_names)) unique(target_names) else {
+    console_module_targets_vec(modules)
+  }
+  if (action == "build" && execution$workers > 1L && !requireNamespace("crew", quietly = TRUE)) stop("并行执行需要安装crew")
+  if (action == "plan" && !requireNamespace("visNetwork", quietly = TRUE)) stop("依赖关系图需要安装visNetwork")
   dir.create(context$state_dir, recursive = TRUE, showWarnings = FALSE)
   lock <- filelock::lock(file.path(context$state_dir, "build.lock"), timeout = 0)
   if (is.null(lock)) stop("另一控制台正在使用本工程；请等待任务完成")
@@ -169,22 +218,28 @@ console_start_run <- function(controller, context, config, action = "check", mod
   active_config <- console_stage_config_path(context, snapshot)
   run_dir <- tempfile(paste0(format(Sys.time(), "%Y%m%d_%H%M%S"), "_"), tmpdir = file.path(context$state_dir, "runs"))
   dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
-  request <- list(context = context, config_dir = active_config, snapshot_dir = snapshot, action = action, targets = selected, created = Sys.time())
+  request <- list(context = context, config_dir = active_config, snapshot_dir = snapshot, action = action, targets = selected,
+    execution = execution, created = Sys.time())
   saveRDS(request, file.path(run_dir, "request.rds"))
+  process_env <- callr::rcmd_safe_env()
+  resource_env <- console_execution_env(execution)
+  process_env[names(resource_env)] <- resource_env
   process <- callr::r_bg(function(code_dir, request_file) {
     env <- new.env(parent = globalenv())
     sys.source(file.path(code_dir, "console", "backend.R"), envir = env)
     sys.source(file.path(code_dir, "console", "worker.R"), envir = env)
     env$console_worker(request_file)
   }, args = list(context$code_dir, file.path(run_dir, "request.rds")), wd = context$code_dir, libpath = .libPaths(),
-    stdout = file.path(run_dir, "run.log"), stderr = "2>&1", supervise = TRUE, cleanup_tree = TRUE, user_profile = FALSE)
+    stdout = file.path(run_dir, "run.log"), stderr = "2>&1", supervise = TRUE, cleanup_tree = TRUE, user_profile = FALSE,
+    env = process_env)
   controller$process <- process
   controller$lock <- lock
   controller$run_dir <- run_dir
   controller$context <- context
   controller$state <- "RUNNING"
   controller$error <- ""
-  controller$report <- NULL
+  if (action != "plan") controller$report <- NULL
+  if (action == "plan") controller$plan <- NULL
   success <- TRUE
   invisible(run_dir)
 }
@@ -192,7 +247,9 @@ console_start_run <- function(controller, context, config, action = "check", mod
 console_stop_run <- function(controller) {
   console_poll_lst(controller)
   if (controller$state != "RUNNING") return(invisible(FALSE))
-  controller$process$kill_tree()
+  try(controller$process$interrupt(), silent = TRUE)
+  controller$process$wait(timeout = 2000)
+  if (controller$process$is_alive()) controller$process$kill_tree()
   controller$process$wait(timeout = 2000)
   if (controller$process$is_alive()) stop("进程尚未停止，暂不释放工程锁")
   controller$state <- "STOPPED"
