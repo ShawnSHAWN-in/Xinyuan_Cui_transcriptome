@@ -1,0 +1,5 @@
+count_file: 02.Quant_定量结果_Calicivirus/result_count.with_Length.tsv
+sample_file: 02.Quant_定量结果_Calicivirus/01_GroupSamples.tsv
+gtf_file: 00.database/GCF_018350175.1_F.catus_Fca126_mat1.0_genomic.gtf.gz
+gene2go_file: gene2go.gz
+output_dir: 04_targets_analysis

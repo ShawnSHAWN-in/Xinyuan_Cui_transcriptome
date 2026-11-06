@@ -1,0 +1,7 @@
+model:
+  method: edgeR
+  strategy: legacy_pairwise
+  min_replicates: 2
+filter:
+  fdr: 0.05
+  abs_logfc: 1

@@ -1,0 +1,17 @@
+schemes:
+  - id: baseline
+    enabled: true
+    type: pairwise
+    group: Condition_Time
+    variable: Condition
+    reference: NC
+    treatments: [Cat, Leopard, Tiger]
+    strata: [Time_f]
+  - id: time_within_condition
+    enabled: false
+    type: pairwise
+    group: Condition_Time
+    variable: Time_f
+    reference: '06'
+    treatments: ['12', '24']
+    strata: [Condition]

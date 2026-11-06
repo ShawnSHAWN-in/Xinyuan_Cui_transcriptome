@@ -1,0 +1,18 @@
+_targets/
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+renv/staging/
+04_targets_analysis/
+03_analysis/
+00.database/
+02.Quant_*/
+gene2go.gz
+*.fastq*
+*.bam
+*.bai
+
+# 合成分析结果在本地生成
+tests/fixtures/*.tsv
+tests/fixtures/*.gtf

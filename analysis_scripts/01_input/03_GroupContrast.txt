@@ -1,0 +1,9 @@
+Cat_06	NC_06
+Leopard_06	NC_06
+Tiger_06	NC_06
+Cat_12	NC_12
+Leopard_12	NC_12
+Tiger_12	NC_12
+Cat_24	NC_24
+Leopard_24	NC_24
+Tiger_24	NC_24
