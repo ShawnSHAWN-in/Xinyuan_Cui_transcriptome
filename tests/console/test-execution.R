@@ -147,6 +147,9 @@ testthat::test_that("继续策略运行独立任务并保留失败状态", {
   state <- wait_console(controller)
   testthat::expect_true(file.exists(file))
   testthat::expect_identical(state$state, "FAILED")
+  testthat::expect_match(state$error, "bad")
+  console_start_run(controller, fixture$context, fixture$config, action = "build", target_names = "qc_files", execution = list(error = "continue"))
+  testthat::expect_identical(wait_console(controller)$state, "SUCCEEDED")
 })
 
 testthat::test_that("运行页面提供执行设置和依赖图入口", {

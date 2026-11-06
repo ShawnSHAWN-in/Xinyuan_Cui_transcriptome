@@ -53,6 +53,8 @@ console_worker <- function(request_file) {
     if (!is.null(selected)) args$names <- substitute(tidyselect::all_of(x), list(x = selected))
     # 当前进程已为干净会话
     do.call(targets::tar_make, args)
+    failed <- targets::tar_errored(store = context$store)
+    if (length(failed)) stop("构建结束，但存在失败targets：", paste(head(failed, 10L), collapse = ", "), "；详情见运行日志。", call. = FALSE)
   }
   message("完成：", format(Sys.time()))
   invisible(TRUE)

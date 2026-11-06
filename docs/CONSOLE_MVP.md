@@ -124,7 +124,7 @@ install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", li
 | shortcut | logical，FALSE | 原生`tar_make(shortcut=...)`；TRUE假定上游已更新，选定目标时跳过上游检查 |
 | memory | character，transient | 原生targets内存策略，可选transient/auto/persistent；不是内存硬配额 |
 | garbage_collection | integer，0 | 原生`tar_option_set(garbage_collection=...)`；0关闭，正整数表示每N个任务前GC |
-| error | character，stop | 原生targets错误策略；continue继续不受影响的独立任务 |
+| error | character，stop | 原生targets错误策略；continue继续不受影响的独立任务，结束时若本次仍有失败target，面板显示失败 |
 | graph_outdated | logical，FALSE | 仅依赖预览使用；TRUE检查待更新状态，可能增加大工程扫描时间 |
 
 CPU可用数通过`parallelly::availableCores()`检测容器、CPU亲和性和调度环境限制。`workers × threads_per_worker`不得超过检测值；该约束限制计算worker的配置，不包含Shiny和调度进程开销，也不替代调度器CPU/内存配额。每个worker有独立内存占用，建议先用2个worker、每worker 1线程验证服务器真实数据。
