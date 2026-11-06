@@ -1,0 +1,9 @@
+Name: Transcriptome Console (MVP)
+Description: Open the experimental transcriptome analysis console
+Binding: open_console
+Interactive: true
+
+Name: Stop Transcriptome Console
+Description: Stop the console and its background analysis
+Binding: close_console
+Interactive: true

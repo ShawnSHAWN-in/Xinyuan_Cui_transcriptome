@@ -2,6 +2,19 @@
 
 复用现有R6转录组基座，以targets组织输入、分组、九个默认比较、GO-BP/KEGG富集、原始风格绘图和组合导出。统计与绘图分离，结果缓存由targets管理。
 
+## RStudio Server 控制台（试验分支）
+
+新增MVP支持输入/环境检查、模块选择、后台启动/停止、日志和结果预览，并支持crew并行worker、线程上限、targets执行设置和交互依赖图。使用方式：
+
+```r
+source("scripts/console.R")
+launch_console(port = 42418)
+```
+
+先安装控制台依赖，或安装可选Addin菜单入口；完整说明与服务器验收步骤见 [docs/CONSOLE_MVP.md](docs/CONSOLE_MVP.md)。默认后台运行并在RStudio Viewer打开；支持固定端口和前台对照模式。更新文件后必须重新source入口，使新参数生效。界面配置保存为独立快照，继续使用原targets缓存与分析函数。
+
+执行/依赖图扩展需补充`install.packages(c("parallelly", "crew", "visNetwork"))`。本次更新应同步`console/`、`R/runtime.R`、`_targets.R`和启动入口，不能只替换`console.R`。通过SSH访问时沿用`launch_console(port = 42418, open = FALSE)`和现有本地转发地址。
+
 ## 快速运行
 
 在已有转录组R环境中先补充工程依赖：`install.packages(c("targets", "yaml", "renv"))`。也可以按下文使用renv快照恢复完整环境。

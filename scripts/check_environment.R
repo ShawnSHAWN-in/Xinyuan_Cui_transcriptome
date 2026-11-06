@@ -9,3 +9,6 @@ if (any(!installed)) stop("缺少依赖；按README安装或使用renv::restore(
 
 
 if (!requireNamespace("scatterplot3d", quietly = TRUE)) message("可选包scatterplot3d未安装：QC将记录3D PCA跳过原因")
+for (package in c("parallelly", "crew", "visNetwork")) {
+  if (!requireNamespace(package, quietly = TRUE)) message("控制台执行/依赖图扩展建议安装：", package)
+}
