@@ -1,6 +1,6 @@
 # RStudio Server 控制台 · 试验版
 
-适用于远程Linux服务器上的RStudio Server。界面和分析分别运行在独立R进程中，RStudio Console可继续使用。界面仅监听服务器127.0.0.1，由启动入口调用RStudio URL代理打开，不需要开放新的公网端口。计算使用当前服务器/容器中的资源。
+适用于远程Linux服务器上的RStudio Server。默认界面和分析分别运行在独立R进程中，RStudio Console可继续使用；前台对照模式在主会话运行界面。界面仅监听服务器127.0.0.1，由RStudio代理打开，不需要开放新的公网端口。计算使用当前服务器/容器中的资源。
 
 ## 首次启动
 
@@ -9,10 +9,58 @@
 ```r
 install.packages(c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "rstudioapi"))
 source("scripts/console.R")
-launch_console()
+h <- launch_console(port = 42418)
 ```
 
-不要直接在自己电脑的浏览器打开终端输出中的服务器localhost地址。`launch_console()`会通过`rstudioapi::translateLocalUrl()`转换URL并打开页面。若浏览器拦截弹窗，可改用`launch_console(viewer = TRUE)`，再从Viewer弹出页面。
+默认使用RStudio Viewer，传入本地地址，由IDE处理端口代理；可从Viewer弹出页面。`viewer = FALSE`通过`rstudioapi::translateLocalUrl()`生成完整地址并尝试打开浏览器。不要直接在自己电脑的浏览器打开服务器localhost地址。启动信息只确认本地端口已监听，不能证明超算网关已成功转发到浏览器。
+
+## 更新代码后重新激活
+
+在包含`_targets.R`的代码根目录更新试验分支，然后在同一个RStudio会话执行：
+
+```r
+# 关闭旧面板及其任务
+if (exists("stop_console", mode = "function")) stop_console()
+source("scripts/console.R")
+stopifnot("port" %in% names(formals(launch_console)))
+h <- launch_console(port = 42418, viewer = TRUE)
+```
+
+`git pull`或覆盖文件不会自动更新当前R内存中的旧函数，必须重新`source()`。若仍提示`unused argument (port = ...)`，检查`getwd()`是否为正确代码目录，以及该文件是否已经更新；`names(formals(launch_console))`应包含port和background。
+
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| port | `getOption("transcriptome.console.port", NULL)` | 1–65535整数；NULL随机选择端口；非root用户通常应使用大于1023的端口 |
+| background | TRUE | TRUE独立进程运行界面；FALSE在当前R会话以前台方式运行界面 |
+| viewer | TRUE | RStudio中使用Viewer；FALSE尝试打开完整代理URL |
+| open | TRUE | FALSE只启动服务并返回句柄，不打开页面 |
+
+端口被其他服务占用时直接报错。再次启动同一代码工程且端口相同，会复用现有进程；更换端口或切换到前台模式需显式`stop_console()`。重新加载入口也可复用旧版句柄。
+
+## 网关故障时的前台对照
+
+如果后台本地HTTP访问成功，但Viewer仍出现`Host not found`等错误，先停止后台控制台，再让Shiny直接在RStudio主会话启动相同页面：
+
+```r
+stop_console()
+launch_console(port = 42418, background = FALSE, viewer = TRUE)
+```
+
+这时R Console会被界面占用，使用RStudio Stop按钮结束；界面内的分析任务仍使用独立计算进程。`stop_console()`只管理后台控制台，不用于停止正在运行的前台Shiny循环。固定端口和前台模式不保证解决平台网关问题，但可以避免随机端口并区分后台启动方式与通用转发故障。
+
+后台模式可查看诊断信息：
+
+```r
+h <- launch_console(port = 42418, open = FALSE)
+h$process$is_alive()
+h$port
+h$url
+h$proxy_path
+h$proxy_url
+cat(tail(readLines(h$log_file, warn = FALSE), 20), sep = "\n")
+```
+
+句柄中的port为实际监听端口（integer），url为本地URL（character），proxy_path/proxy_url为RStudio提供的相对/完整代理地址（character；不在RStudio或转换失败时NULL），process为callr进程对象，log_file为启动日志路径（character）。这些值不能证明外部网关可达。排查时可在RStudio Terminal执行`curl --noproxy '*' --max-time 5 -sS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:42418/`。本地HTTP 200仅证明当前环境内可访问，仍需在浏览器验收代理。
 
 代码与数据分开放置时：
 
@@ -41,7 +89,7 @@ R CMD INSTALL tools/transcriptomeconsole
 install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", lib = "/你的可写R包目录")
 ```
 
-安装后在Addins菜单选择`Transcriptome Console (MVP)`。它从当前目录向上寻找代码根目录；也可设置`TRANSCRIPTOME_CODE_DIR`。菜单`Stop Transcriptome Console`关闭面板及后台任务。Addin包只是入口，实际控制台代码仍由试验分支维护；更新代码后关闭并重新打开面板。
+安装后在Addins菜单选择`Transcriptome Console (MVP)`。它从当前目录向上寻找代码根目录；也可设置`TRANSCRIPTOME_CODE_DIR`。菜单`Stop Transcriptome Console`关闭面板及后台任务。Addin包只是入口，实际控制台代码仍由试验分支维护；更新代码后关闭并重新打开面板。若希望Addin固定使用42418端口，在当前R会话先执行`options(transcriptome.console.port = 42418)`；默认NULL仍随机选择。
 
 ## 按页面操作
 
@@ -114,6 +162,6 @@ stop_console()
 Rscript tests/run_console_tests.R
 ```
 
-覆盖配置稳定性、输入/比较检查、模块映射、日志边界、结果目录限制、后台检查、互斥、失败恢复、真实targets最小构建及缓存复用、停止及后代进程清理、Shiny服务端和HTTP启动、Addin安装。最小targets用合成项目验证调度，不替代真实转录组计算或RStudio Server代理验收。测试不需要原始数据或完整生信包；依赖由`.github/workflows/console-mvp.yml`安装。
+覆盖配置稳定性、输入/比较检查、模块映射、日志边界、结果目录限制、后台检查、互斥、失败恢复、真实targets最小构建及缓存复用、停止及后代进程清理、Shiny服务端和HTTP启动、固定端口、端口冲突、旧句柄复用、Addin端口选项、前台HTTP对照、Addin安装。最小targets用合成项目验证调度，不替代真实转录组计算或RStudio Server代理验收。测试不需要原始数据或完整生信包；依赖由`.github/workflows/console-mvp.yml`安装。
 
 服务器首次验收依次做：打开面板并确认Console可输入；检查样本及九个默认比较；仅运行QC；检查日志和PNG；再次运行观察缓存跳过；启动一个需重建的模块并停止；重新启动补算。最后验证Addins入口和Viewer备用方式。RStudio Server的实际反向代理、真实数据规模及服务器依赖仍需在你的环境验收。

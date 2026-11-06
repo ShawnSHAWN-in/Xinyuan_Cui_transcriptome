@@ -8,10 +8,10 @@
 
 ```r
 source("scripts/console.R")
-launch_console()
+launch_console(port = 42418)
 ```
 
-先安装控制台依赖，或安装可选Addin菜单入口；完整说明与服务器验收步骤见 [docs/CONSOLE_MVP.md](docs/CONSOLE_MVP.md)。界面配置保存为独立快照，继续使用原targets缓存与分析函数。
+先安装控制台依赖，或安装可选Addin菜单入口；完整说明与服务器验收步骤见 [docs/CONSOLE_MVP.md](docs/CONSOLE_MVP.md)。默认后台运行并在RStudio Viewer打开；支持固定端口和前台对照模式。更新文件后必须重新source入口，使新参数生效。界面配置保存为独立快照，继续使用原targets缓存与分析函数。
 
 ## 快速运行
 

@@ -156,3 +156,75 @@ testthat::test_that("界面在独立进程启动并可复用关闭", {
   stop_console(fixture$root)
   testthat::expect_false(handle$process$is_alive())
 })
+
+testthat::test_that("启动参数校验及RStudio默认入口", {
+  testthat::expect_true(isTRUE(formals(launch_console)$viewer))
+  testthat::expect_true(isTRUE(formals(launch_console)$background))
+  for (port in list(0, 65536, NA_real_, Inf, 1.5, "42418", c(42418, 42419))) {
+    testthat::expect_error(launch_console(port = port, open = FALSE), "port须")
+  }
+  testthat::expect_error(launch_console(background = NA, open = FALSE), "background须")
+})
+
+testthat::test_that("固定端口、旧句柄复用和Addin端口选项", {
+  fixture <- console_fixture()
+  port <- httpuv::randomPort()
+  handle <- launch_console(code_dir = fixture$root, port = port, open = FALSE)
+  on.exit(stop_console(fixture$root), add = TRUE)
+  testthat::expect_equal(handle$port, port)
+  testthat::expect_identical(handle$url, paste0("http://127.0.0.1:", port, "/"))
+  testthat::expect_true(any(grepl("转录组分析控制台", readLines(url(handle$url), warn = FALSE), fixed = TRUE)))
+  registry <- getOption("transcriptome.console.processes")
+  registry[[fixture$root]]$port <- NULL
+  options(transcriptome.console.processes = registry)
+  other <- launch_console(code_dir = fixture$root, port = port, open = FALSE)
+  testthat::expect_identical(handle$process$get_pid(), other$process$get_pid())
+  different <- if (port == 65535L) port - 1L else port + 1L
+  testthat::expect_error(launch_console(code_dir = fixture$root, port = different, open = FALSE), "切换到端口")
+  testthat::expect_error(launch_console(code_dir = fixture$root, port = port, background = FALSE, open = FALSE), "后台控制台正在运行")
+  testthat::expect_true(handle$process$is_alive())
+  stop_console(fixture$root)
+  previous <- options(transcriptome.console.port = port)
+  on.exit(options(previous), add = TRUE)
+  restarted <- launch_console(code_dir = fixture$root, open = FALSE)
+  testthat::expect_equal(restarted$port, port)
+})
+
+testthat::test_that("端口被其他服务占用时明确报错", {
+  fixture <- console_fixture()
+  port <- httpuv::randomPort()
+  server <- httpuv::startServer("127.0.0.1", port, list(call = function(req) list(status = 200L, body = "existing")))
+  on.exit(httpuv::stopServer(server), add = TRUE)
+  testthat::expect_error(launch_console(code_dir = fixture$root, port = port, open = FALSE), "无法监听127.0.0.1")
+  registry <- getOption("transcriptome.console.processes", list())
+  testthat::expect_null(registry[[fixture$root]])
+})
+
+testthat::test_that("前台对照模式提供同一控制台页面", {
+  fixture <- console_fixture()
+  port <- httpuv::randomPort()
+  process <- callr::r_bg(function(root, port) {
+    env <- new.env(parent = globalenv())
+    sys.source(file.path(root, "scripts", "console.R"), envir = env)
+    env$launch_console(code_dir = root, port = port, background = FALSE, open = FALSE)
+  }, args = list(fixture$root, port), stdout = tempfile(), stderr = "2>&1", supervise = TRUE, cleanup_tree = TRUE, user_profile = FALSE)
+  on.exit(if (process$is_alive()) process$kill_tree(), add = TRUE)
+  ready <- FALSE
+  deadline <- Sys.time() + 20
+  while (process$is_alive() && Sys.time() < deadline) {
+    con <- tryCatch(suppressWarnings(socketConnection("127.0.0.1", port = port, open = "r+b", blocking = TRUE, timeout = 0.2)),
+      error = function(e) NULL)
+    if (!is.null(con)) {
+      close(con)
+      ready <- TRUE
+      break
+    }
+    Sys.sleep(0.1)
+  }
+  testthat::expect_true(ready)
+  response <- readLines(url(paste0("http://127.0.0.1:", port, "/")), warn = FALSE)
+  testthat::expect_true(any(grepl("转录组分析控制台", response, fixed = TRUE)))
+  process$kill_tree()
+  process$wait(timeout = 2000)
+  testthat::expect_false(process$is_alive())
+})
