@@ -77,6 +77,22 @@ console_snapshot_path <- function(context, config) {
   normalizePath(path)
 }
 
+console_stage_config_path <- function(context, snapshot) {
+  # 执行路径固定，仅更新变动文件
+  path <- file.path(context$state_dir, "active-config")
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  for (name in console_config_names) {
+    source <- file.path(snapshot, paste0(name, ".yml"))
+    destination <- file.path(path, paste0(name, ".yml"))
+    same <- file.exists(destination) && identical(readLines(source, warn = FALSE), readLines(destination, warn = FALSE))
+    if (!same) {
+      temporary <- tempfile("config_", tmpdir = path)
+      if (!file.copy(source, temporary) || !file.rename(temporary, destination)) stop("无法写入执行配置：", destination)
+    }
+  }
+  normalizePath(path)
+}
+
 console_validate_lst <- function(context, config, check_packages = TRUE) {
   helpers <- new.env(parent = globalenv())
   for (name in c("io", "metadata", "design")) sys.source(file.path(context$code_dir, "R", paste0(name, ".R")), envir = helpers)
@@ -150,9 +166,10 @@ console_start_run <- function(controller, context, config, action = "check", mod
   success <- FALSE
   on.exit(if (!success) filelock::unlock(lock), add = TRUE)
   snapshot <- console_snapshot_path(context, config)
+  active_config <- console_stage_config_path(context, snapshot)
   run_dir <- tempfile(paste0(format(Sys.time(), "%Y%m%d_%H%M%S"), "_"), tmpdir = file.path(context$state_dir, "runs"))
   dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
-  request <- list(context = context, config_dir = snapshot, action = action, targets = selected, created = Sys.time())
+  request <- list(context = context, config_dir = active_config, snapshot_dir = snapshot, action = action, targets = selected, created = Sys.time())
   saveRDS(request, file.path(run_dir, "request.rds"))
   process <- callr::r_bg(function(code_dir, request_file) {
     env <- new.env(parent = globalenv())

@@ -70,7 +70,7 @@ install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", li
 
 ## 配置、缓存和运行记录
 
-界面不改写仓库中的`config/*.yml`，编辑结果保存到`.console/configs/<SHA256>/`。相同内容复用同一路径，避免每次点击运行因时间戳目录变化而重新构建。首次从原config切换到快照时，配置文件路径改变，会触发相关依赖检查/重建；后续相同快照可复用缓存。快照保存后按只读使用；若被外部修改，控制台会拒绝复用。
+界面不改写仓库中的`config/*.yml`，编辑结果存档到`.console/configs/<SHA256>/`，相同内容复用存档。启动任务前，在持有工程锁时将配置准备到固定的`.console/active-config/`，只替换内容改变的文件，避免修改绘图参数时因整套配置路径改变而重建其他模块。首次从原config切换到执行配置时，文件路径改变，会触发相关依赖检查/重建；后续可按文件内容增量检查。存档快照按只读使用；若被外部修改，控制台会拒绝复用。
 
 仍使用代码根目录`_targets/`缓存和原有结果目录，不新增另一套分析缓存。运行中固定本次配置；手动修改源YAML不会改变已启动任务的快照。源码和输入数据文件不复制，运行中不要编辑它们。
 
@@ -80,12 +80,13 @@ install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", li
 |---|---|
 | `.console/app_*.log` | Shiny启动/运行日志，排查页面无法打开 |
 | `.console/configs/<SHA256>/*.yml` | 七个有效配置，字段与原config文件一致 |
+| `.console/active-config/*.yml` | 固定路径的执行配置，仅在任务启动前更新；运行期间不应手动修改 |
 | `.console/runs/<时间>_<随机标识>/request.rds` | 本次操作、目标、代码/数据/配置目录、快照路径及创建时间 |
 | 同目录`run.log` | 分析标准输出和错误输出 |
 | 同目录`validation.rds` | 输入检查通过后保存的元数据、比较、依赖概览、输入路径和输出目录 |
 | 同目录`result.rds` | 状态、错误信息和结束时间，由控制台观察任务结束或停止后写入 |
 
-request.rds为list：`context`为代码/数据/配置/状态/缓存路径，`config_dir`为快照路径，`action`为check/build，`targets`为目标向量（NULL表示完整工程），`created`为POSIXct时间。
+request.rds为list：`context`为代码/数据/配置/状态/缓存路径，`config_dir`为固定执行配置路径，`snapshot_dir`为本次存档快照路径，`action`为check/build，`targets`为目标向量（NULL表示完整工程），`created`为POSIXct时间。后续运行会更新执行配置，复核历史参数请读取snapshot_dir。
 
 validation.rds为list：`metadata`和`comparisons`沿用原工程字段，见README及变量配置；`packages`每行一个包，`Package`为包名（character），`Installed`为是否找到安装目录（logical，不保证包可加载）；`inputs`每行一个输入，`Input`为配置键（character），`Path`为绝对路径（character）；`output_dir`为输出绝对路径（character），`note`为检查范围说明（character）。
 
