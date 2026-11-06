@@ -13,9 +13,9 @@ testthat::test_that("配置快照稳定且不修改原配置", {
   testthat::expect_error(console_module_targets_vec("missing"), "模块")
   testthat::expect_setequal(console_module_targets_vec("deg_plots"), c("deg_plot_files", "deg_combined_files"))
   source <- paste(readLines(file.path(project_root, "_targets.R")), collapse = "\n")
-  names <- regmatches(source, gregexpr("tar_target\\([A-Za-z_]+", source))[[1]]
-  names <- sub("tar_target\\(", "", names)
-  testthat::expect_true(all(console_module_targets_vec(names(console_modules_lst())) %in% names))
+  target_names <- regmatches(source, gregexpr("tar_target\\([A-Za-z_]+", source))[[1]]
+  target_names <- sub("tar_target\\(", "", target_names)
+  testthat::expect_true(all(console_module_targets_vec(names(console_modules_lst())) %in% target_names))
 })
 
 testthat::test_that("输入校验复用实际分组和比较逻辑", {
@@ -70,7 +70,6 @@ testthat::test_that("后台检查、互斥、失败后可恢复", {
 })
 
 testthat::test_that("真实targets构建与缓存复用", {
-  testthat::skip_if_not_installed("targets")
   fixture <- console_fixture()
   controller <- console_new_controller()
   on.exit(console_stop_run(controller), add = TRUE)
@@ -88,7 +87,6 @@ testthat::test_that("真实targets构建与缓存复用", {
 })
 
 testthat::test_that("停止会终止计算进程和后代", {
-  testthat::skip_if_not_installed("targets")
   fixture <- console_fixture()
   child_pid <- file.path(fixture$root, "child.pid")
   lines <- c("list(targets::tar_target(qc_files, {",
