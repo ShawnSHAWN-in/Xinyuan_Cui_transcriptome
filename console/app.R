@@ -136,10 +136,10 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
     })
     shiny::observeEvent(input$refresh_results, {
       tryCatch({
-        if (is.null(result_root())) {
+        if (is.null(controller$report)) {
           request <- current_request()
           result_root(console_absolute_path(request$config$paths$output_dir, request$context$data_dir, must_work = FALSE))
-        }
+        } else result_root(controller$report$output_dir)
         result_files(console_result_files_tbl(result_root()))
       }, error = notify_error)
     })

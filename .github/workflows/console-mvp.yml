@@ -21,6 +21,10 @@ jobs:
         with:
           r-version: 'release'
           use-public-rspm: true
+      - name: Install igraph system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglpk40 libxml2-dev
       - name: Install console test dependencies
         shell: Rscript {0}
         run: |

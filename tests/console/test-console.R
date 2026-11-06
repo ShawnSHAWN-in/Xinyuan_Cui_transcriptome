@@ -129,6 +129,12 @@ testthat::test_that("Shiny页面可渲染且样本表按检查结果展示", {
     testthat::expect_identical(app_controller$state, "SUCCEEDED")
     testthat::expect_match(output$metadata, "Cat_06_1")
     testthat::expect_match(output$comparisons, "Cat_06_vs_NC_06")
+    dir.create(file.path(fixture$root, "output"))
+    writeLines(c("Gene\tValue", "gene1\t10"), file.path(fixture$root, "output", "preview.tsv"))
+    session$setInputs(refresh_results = 1, format = "tsv", search = "preview")
+    session$setInputs(result_file = "preview.tsv")
+    testthat::expect_match(output$table, "gene1")
+    testthat::expect_match(output$result_path, "preview.tsv")
   })
 })
 
