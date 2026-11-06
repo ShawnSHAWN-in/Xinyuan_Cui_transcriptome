@@ -57,7 +57,7 @@ console_app <- function(code_dir, data_dir = code_dir, config_dir = "config") {
           shiny::tags$p(class = "muted", paste("检测到可用CPU：", available_cores, "；worker数×线程数不得超过此值。")),
           shiny::numericInput("workers", "并行worker数（独立R进程）", 1, min = 1, max = available_cores, step = 1),
           shiny::numericInput("threads_per_worker", "每worker线程上限", 1, min = 1, max = available_cores, step = 1),
-          shiny::tags$p(class = "muted", "并行worker使用crew。线程上限作用于data.table及支持环境变量的BLAS/OpenMP库；GSEA内部仍串行。"),
+          shiny::tags$p(class = "muted", "并行worker使用crew，各自占用内存。线程上限作用于data.table及支持环境变量的BLAS/OpenMP库；GSEA内部仍串行。"),
           shiny::selectInput("reporter", "日志级别", c("逐任务" = "verbose", "带时间戳" = "timestamp", "平衡" = "balanced",
             "精简" = "terse", "静默" = "silent")),
           shiny::selectInput("error", "错误策略", c("遇错停止" = "stop", "继续独立任务" = "continue")),

@@ -2,7 +2,7 @@
 configure_targets_runtime <- function() {
   read_integer <- function(name, default, minimum = 1L) {
     value <- suppressWarnings(as.numeric(Sys.getenv(name, unset = as.character(default))))
-    if (length(value) != 1L || !is.finite(value) || value < minimum || value != round(value)) stop("执行参数无效：", name)
+    if (length(value) != 1L || !is.finite(value) || value < minimum || value > .Machine$integer.max || value != round(value)) stop("执行参数无效：", name)
     as.integer(value)
   }
   workers <- read_integer("TRANSCRIPTOME_WORKERS", 1L)

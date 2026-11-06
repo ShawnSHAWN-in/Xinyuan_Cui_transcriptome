@@ -7,7 +7,7 @@
 在代码根目录、已安装原工程分析依赖的R会话中执行：
 
 ```r
-install.packages(c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "rstudioapi"))
+install.packages(c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "rstudioapi", "parallelly", "crew", "visNetwork"))
 source("scripts/console.R")
 h <- launch_console(port = 42418)
 ```
@@ -27,6 +27,16 @@ h <- launch_console(port = 42418, viewer = TRUE)
 ```
 
 `git pull`或覆盖文件不会自动更新当前R内存中的旧函数，必须重新`source()`。若仍提示`unused argument (port = ...)`，检查`getwd()`是否为正确代码目录，以及该文件是否已经更新；`names(formals(launch_console))`应包含port和background。
+
+执行选项/依赖图扩展涉及`console/`、`R/runtime.R`、`_targets.R`及`scripts/console.R`，应更新整套试验分支代码。安装新增依赖`parallelly`、`crew`、`visNetwork`后关闭旧控制台并重新打开。旧renv.lock不包含这三个可选扩展包的完整新增快照；使用renv时在项目库中另行安装，不用旧快照删除刚安装的扩展依赖。
+
+已通过SSH隧道访问的平台可继续：
+
+```r
+h <- launch_console(code_dir = code_dir, data_dir = data_dir, port = 42418, open = FALSE)
+```
+
+本地SSH命令：`ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:18080:127.0.0.1:42418 sothis-container`，电脑浏览器打开`http://127.0.0.1:18080/`。SSH连接需指向运行Shiny的同一容器。
 
 | 参数 | 默认值 | 含义 |
 |---|---|---|
@@ -98,8 +108,34 @@ install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", li
 3. **运行与日志**：选择模块并启动；也可勾选“运行完整工程”。运行前再次检查输入。模块运行会检查其上游依赖；例如QC当前依赖注释背景，可能获取KEGG快照，具体沿用原依赖图。“完整工程”包括最终汇总；局部运行不会额外触发整个汇总流程。
 4. **停止当前任务**：终止分析进程及其后代，保留已经写入的targets缓存。未完成目标下次重新构建，不提供在函数中间暂停后继续的能力。
 5. **结果浏览**：首次或运行后点击“刷新结果清单”，按类型和路径文字筛选，预览单张PNG/表格/文本并下载文件。PDF通过下载查看。清单基于最近一次输入检查的输出目录；若未检查，则使用当前输入框的输出目录。
+6. **依赖关系与运行预览**：选择整个工程或当前目标范围，点击“生成依赖预览”，查看原生`tar_visnetwork()`交互图。默认不检查待更新状态；勾选后调用`tar_outdated()`检查并着色。预览不执行分析target，不要求原始输入文件已就绪，但工程声明和依赖包仍须可解析。
 
 首版不提供分组/比较表格编辑器；修改`variables.yml`、`comparisons.yml`后，重新检查。原有火山图、MA、rank及QC计算/绘图函数保持原实现。
+
+## targets执行设置
+
+运行页提供以下选项，每次启动都固定保存到`request.rds$execution`。这些性能和调度选项独立于七个分析配置文件；页面重新打开时恢复默认值，历史运行的有效选项可从运行记录复核。
+
+| 字段 | 类型与默认值 | 作用 |
+|---|---|---|
+| workers | integer，1 | `crew::crew_controller_local(workers=...)`的最大并行worker数；1使用原串行执行 |
+| threads_per_worker | integer，1 | 每个R进程的data.table线程上限及BLAS/OpenMP环境变量上限 |
+| reporter | character，verbose | 原生`tar_make(reporter=...)`，可选verbose/timestamp/balanced/terse/silent |
+| shortcut | logical，FALSE | 原生`tar_make(shortcut=...)`；TRUE假定上游已更新，选定目标时跳过上游检查 |
+| memory | character，transient | 原生targets内存策略，可选transient/auto/persistent；不是内存硬配额 |
+| garbage_collection | integer，0 | 原生`tar_option_set(garbage_collection=...)`；0关闭，正整数表示每N个任务前GC |
+| error | character，stop | 原生targets错误策略；continue继续不受影响的独立任务 |
+| graph_outdated | logical，FALSE | 仅依赖预览使用；TRUE检查待更新状态，可能增加大工程扫描时间 |
+
+CPU可用数通过`parallelly::availableCores()`检测容器、CPU亲和性和调度环境限制。`workers × threads_per_worker`不得超过检测值；该约束限制计算worker的配置，不包含Shiny和调度进程开销，也不替代调度器CPU/内存配额。每个worker有独立内存占用，建议先用2个worker、每worker 1线程验证服务器真实数据。
+
+线程上限通过子进程启动环境中的OMP_NUM_THREADS、OMP_THREAD_LIMIT、OPENBLAS_NUM_THREADS、MKL_NUM_THREADS、BLIS_NUM_THREADS、VECLIB_MAXIMUM_THREADS、R_DATATABLE_NUM_THREADS设置；`_targets.R`调用`R/runtime.R`，避免再把data.table固定重置为1。实际加速依赖算法及所链接计算库；单线程edgeR代码不会因填写8线程就自动并行。GSEA内部仍使用SerialParam，通过比较×数据库的targets任务并行，避免嵌套并行。
+
+高级目标选择应先生成依赖预览，再勾选“按target名称选择”，从清单选择一个或多个静态target。默认包含必要上游，只有显式开启shortcut才跳过。完整工程选项优先于手动目标和模块选择。依赖图默认聚合动态分支，不枚举所有分支缓存对象。
+
+依赖预览也是一个受工程锁保护的后台操作，构建过程中不重新解析工程。已生成的图可以在运行时查看，但显示的是生成时的状态；任务实时状态另见运行页。完成后可再次生成图刷新状态。预览不启动crew worker。串行运行的日志见run.log；并行worker自身的输出见运行页“crew worker日志”。停止时先请求中断并清理controller，再按需要终止进程树。
+
+命令行也可使用同一运行时适配，例如在启动R进程前设置`TRANSCRIPTOME_WORKERS=2`、`TRANSCRIPTOME_THREADS_PER_WORKER=1`。其他适配变量为TRANSCRIPTOME_TARGETS_MEMORY、TRANSCRIPTOME_TARGETS_ERROR、TRANSCRIPTOME_GC_INTERVAL；默认与面板一致。CLI用户应自行确保workers×threads符合已分配资源；面板的CPU预算校验在启动worker前执行。
 
 ## 模块与目标
 
@@ -132,9 +168,16 @@ install.packages("tools/transcriptomeconsole", repos = NULL, type = "source", li
 | `.console/runs/<时间>_<随机标识>/request.rds` | 本次操作、目标、代码/数据/配置目录、快照路径及创建时间 |
 | 同目录`run.log` | 分析标准输出和错误输出 |
 | 同目录`validation.rds` | 输入检查通过后保存的元数据、比较、依赖概览、输入路径和输出目录 |
+| 同目录`execution.rds` | 有效执行设置、检测到的CPU数、实际data.table线程数、线程环境及R版本 |
+| 同目录`plan.rds` | 依赖预览的target清单、visNetwork图对象、待更新清单和生成时间 |
+| 同目录`crew/` | 每次crew worker实例的标准输出/错误日志；串行时通常不产生 |
 | 同目录`result.rds` | 状态、错误信息和结束时间，由控制台观察任务结束或停止后写入 |
 
-request.rds为list：`context`为代码/数据/配置/状态/缓存路径，`config_dir`为固定执行配置路径，`snapshot_dir`为本次存档快照路径，`action`为check/build，`targets`为目标向量（NULL表示完整工程），`created`为POSIXct时间。后续运行会更新执行配置，复核历史参数请读取snapshot_dir。
+request.rds为list：`context`为代码/数据/配置/状态/缓存路径，`config_dir`为固定执行配置路径，`snapshot_dir`为本次存档快照路径，`action`为check/build/plan，`targets`为目标向量（NULL表示完整工程），`execution`为上述执行设置list，`created`为POSIXct时间。后续运行会更新执行配置，复核历史参数请读取snapshot_dir。
+
+execution.rds为list：`options`为上述执行设置，`available_cores`为检测到的可用CPU（integer），`data_table_threads`为调度R进程实际data.table线程数（integer），`environment`为上述线程环境变量的命名character向量，`R`为R版本字符串。各crew worker的实际线程设置由计算库加载环境决定，测试另行验证data.table线程数。
+
+plan.rds为list：`manifest`每行一个静态target，`name`为名称（character）、`command`为原生R命令（character）、`pattern`为分支表达式（character，非分支可缺失）、`description`为原生描述（character，可缺失）、`Selected`表示直接选定目标（logical，完整工程全部TRUE）、`In_graph`表示在当前子图中（logical，包含上游）、`Outdated`为待更新判定（logical，未检查或范围外为NA）；`graph`为visNetwork对象，`outdated`为待更新target名称向量（character，未检查时NULL），`created`为POSIXct时间，`snapshot_dir`为存档路径（character），`targets`为选定目标向量（character，NULL表示整个工程）。
 
 validation.rds为list：`metadata`和`comparisons`沿用原工程字段，见README及变量配置；`packages`每行一个包，`Package`为包名（character），`Installed`为是否找到安装目录（logical，不保证包可加载）；`inputs`每行一个输入，`Input`为配置键（character），`Path`为绝对路径（character）；`output_dir`为输出绝对路径（character），`note`为检查范围说明（character）。
 
@@ -162,6 +205,6 @@ stop_console()
 Rscript tests/run_console_tests.R
 ```
 
-覆盖配置稳定性、输入/比较检查、模块映射、日志边界、结果目录限制、后台检查、互斥、失败恢复、真实targets最小构建及缓存复用、停止及后代进程清理、Shiny服务端和HTTP启动、固定端口、端口冲突、旧句柄复用、Addin端口选项、前台HTTP对照、Addin安装。最小targets用合成项目验证调度，不替代真实转录组计算或RStudio Server代理验收。测试不需要原始数据或完整生信包；依赖由`.github/workflows/console-mvp.yml`安装。
+覆盖配置稳定性、输入/比较检查、模块映射、日志边界、结果目录限制、后台检查、互斥、失败恢复、真实targets最小构建及缓存复用、停止及后代进程清理、Shiny服务端和HTTP启动、固定端口、端口冲突、旧句柄复用、Addin端口选项、前台HTTP对照、Addin安装。扩展测试包括CPU预算、实际线程设置、crew双worker并行与停止、资源切换后的缓存复用、继续错误策略、目标名称选择、真实工程完整图和子图预览，以及依赖图服务端渲染。最小targets用合成项目验证调度，不替代真实转录组计算或RStudio Server代理验收。测试不需要原始数据或完整生信包；依赖由`.github/workflows/console-mvp.yml`安装。
 
 服务器首次验收依次做：打开面板并确认Console可输入；检查样本及九个默认比较；仅运行QC；检查日志和PNG；再次运行观察缓存跳过；启动一个需重建的模块并停止；重新启动补算。最后验证Addins入口和Viewer备用方式。RStudio Server的实际反向代理、真实数据规模及服务器依赖仍需在你的环境验收。

@@ -35,10 +35,11 @@ console_execution_lst <- function(settings = list(), available = console_availab
   for (name in c("workers", "threads_per_worker", "garbage_collection")) {
     value <- result[[name]]
     minimum <- if (name == "garbage_collection") 0 else 1
-    if (!is.numeric(value) || length(value) != 1L || !is.finite(value) || value < minimum || value != round(value)) stop("执行参数须为整数：", name)
+    if (!is.numeric(value) || length(value) != 1L || !is.finite(value) || value < minimum || value > .Machine$integer.max ||
+        value != round(value)) stop("执行参数须为整数：", name)
     result[[name]] <- as.integer(value)
   }
-  if (result$workers * result$threads_per_worker > available) stop("worker数×每worker线程数不能超过当前检测到的可用CPU数：", available)
+  if (as.double(result$workers) * result$threads_per_worker > available) stop("worker数×每worker线程数不能超过当前检测到的可用CPU数：", available)
   for (name in c("shortcut", "graph_outdated")) {
     if (!is.logical(result[[name]]) || length(result[[name]]) != 1L || is.na(result[[name]])) stop("执行参数须为TRUE或FALSE：", name)
   }
@@ -154,7 +155,7 @@ console_validate_lst <- function(context, config, check_packages = TRUE) {
   while (!dir.exists(parent) && dirname(parent) != parent) parent <- dirname(parent)
   if (file.access(parent, 2) != 0) stop("输出目录的父目录不可写：", parent)
   packages <- c("shiny", "callr", "yaml", "filelock", "digest", "data.table", "tibble", "dplyr", "targets", "edgeR", "ggplot2",
-    "clusterProfiler", "enrichplot", "GO.db", "KEGGREST", "patchwork", "pheatmap", "rstudioapi")
+    "clusterProfiler", "enrichplot", "GO.db", "KEGGREST", "patchwork", "pheatmap", "rstudioapi", "parallelly", "crew", "visNetwork")
   installed <- vapply(packages, function(name) nzchar(system.file(package = name)), logical(1))
   package_table <- data.frame(Package = packages, Installed = installed)
   message("输入检查通过：", nrow(metadata), "个样本；", nrow(comparisons), "个比较。count数值由分析模块完整检查。")

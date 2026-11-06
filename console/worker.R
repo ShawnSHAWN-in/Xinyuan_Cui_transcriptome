@@ -14,7 +14,7 @@ console_worker <- function(request_file) {
     environment = Sys.getenv(names(console_execution_env(execution))), R = R.version.string), file.path(dirname(request_file), "execution.rds"))
   selected <- request$targets
   if (request$action == "plan") {
-    manifest <- targets::tar_manifest(callr_function = NULL)
+    manifest <- targets::tar_manifest(callr_function = NULL, drop_missing = FALSE)
     if (length(setdiff(selected, manifest$name))) stop("所选target不在当前工程中：", paste(setdiff(selected, manifest$name), collapse = ", "))
     graph_args <- list(targets_only = TRUE, outdated = execution$graph_outdated, callr_function = NULL, store = context$store, physics = FALSE)
     if (!is.null(selected)) graph_args$names <- substitute(tidyselect::all_of(x), list(x = selected))

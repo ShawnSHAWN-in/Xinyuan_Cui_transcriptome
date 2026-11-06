@@ -5,6 +5,8 @@ testthat::test_that("执行选项受CPU预算及合法取值约束", {
   testthat::expect_identical(value$error, "continue")
   testthat::expect_error(console_execution_lst(list(workers = 3, threads_per_worker = 2), available = 4), "可用CPU")
   testthat::expect_error(console_execution_lst(list(workers = 0)), "整数")
+  testthat::expect_error(console_execution_lst(list(workers = 2^32)), "整数")
+  testthat::expect_error(console_execution_lst(list(workers = 50000, threads_per_worker = 50000), available = 4), "可用CPU")
   testthat::expect_error(console_execution_lst(list(threads_per_worker = 1.5)), "整数")
   testthat::expect_error(console_execution_lst(list(shortcut = "yes")), "TRUE或FALSE")
   testthat::expect_error(console_execution_lst(list(memory = "unknown")), "取值错误")
@@ -131,6 +133,20 @@ testthat::test_that("并行停止后worker退出且工程锁可复用", {
   testthat::expect_identical(console_poll_lst(controller)$state, "STOPPED")
   console_start_run(controller, fixture$context, fixture$config, action = "check")
   testthat::expect_identical(wait_console(controller)$state, "SUCCEEDED")
+})
+
+testthat::test_that("继续策略运行独立任务并保留失败状态", {
+  fixture <- console_fixture()
+  file <- file.path(fixture$root, "survived.txt")
+  writeLines(c("sys.source('R/runtime.R', envir = environment())", "configure_targets_runtime()",
+    "list(targets::tar_target(bad, stop('expected_failure')),", paste0("targets::tar_target(qc_files, {writeLines('ok', ", deparse(file),
+      "); ", deparse(file), "}, format = 'file'))")), file.path(fixture$root, "_targets.R"))
+  controller <- console_new_controller()
+  on.exit(console_stop_run(controller), add = TRUE)
+  console_start_run(controller, fixture$context, fixture$config, action = "build", all = TRUE, execution = list(error = "continue"))
+  state <- wait_console(controller)
+  testthat::expect_true(file.exists(file))
+  testthat::expect_identical(state$state, "FAILED")
 })
 
 testthat::test_that("运行页面提供执行设置和依赖图入口", {
