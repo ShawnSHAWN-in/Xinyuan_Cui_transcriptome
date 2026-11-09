@@ -8,6 +8,9 @@ new_legacy_context <- function(files, settings = list(), plot_helper = NULL) {
   env$`%>%` <- magrittr::`%>%`
   by_name <- stats::setNames(files, basename(files))
   sys.source(by_name[["project_helpers.R"]], env)
+  eggnog_file <- by_name[["eggnog_annotation.R"]]
+  if (is.null(eggnog_file)) eggnog_file <- file.path(dirname(by_name[["compatibility.R"]]), "eggnog_annotation.R")
+  sys.source(eggnog_file, env)
   sys.source(by_name[["Rscript_R6_transcriptome_base.R"]], env)
   expressions <- parse(by_name[["Rscript_R6_transcriptome_class.R"]], keep.source = FALSE)
   for (expr in expressions) {
@@ -21,3 +24,4 @@ new_legacy_context <- function(files, settings = list(), plot_helper = NULL) {
 legacy_public_data <- function(annotation) {
   list(get_gene_annotation = function() annotation)
 }
+

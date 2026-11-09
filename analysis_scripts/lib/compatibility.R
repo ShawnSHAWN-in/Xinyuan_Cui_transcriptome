@@ -101,24 +101,8 @@ PublicDataManager$set("private", "load_go_gene2go.gz", function(gene2go.gz = NUL
 
 # GO祖先关联统一处理
 PublicDataManager$set("public", "get_go_background", function(ontology = "BP", include_ancestors = cfg$go_ancestors) {
-  if (!ontology %in% c("BP", "CC", "MF")) stop("GO ontology必须是BP/CC/MF")
   if (is.null(private$.go_tbl)) stop("GO注释尚未加载")
-  metadata <- suppressMessages(AnnotationDbi::select(GO.db::GO.db, keys = AnnotationDbi::keys(GO.db::GO.db), columns = c("TERM", "ONTOLOGY")))
-  names <- metadata[metadata$ONTOLOGY == ontology, c("GOID", "TERM")]
-  colnames(names) <- c("TERM", "NAME")
-  names <- unique(names)
-  assoc <- unique(data.frame(TERM = private$.go_tbl$GO, GENE = as.character(private$.go_tbl$ENTREZID)))
-  assoc <- assoc[assoc$TERM %in% names$TERM & !is.na(assoc$GENE), , drop = FALSE]
-  if (include_ancestors && nrow(assoc)) {
-    ancestors <- as.list(get(paste0("GO", ontology, "ANCESTOR"), envir = asNamespace("GO.db")))
-    expansion <- dplyr::bind_rows(lapply(unique(assoc$TERM), function(id) {
-      values <- unique(c(id, ancestors[[id]]))
-      data.frame(Source = id, TERM = values[!is.na(values) & values %in% names$TERM])
-    }))
-    assoc <- dplyr::inner_join(assoc, expansion, by = c("TERM" = "Source"), relationship = "many-to-many") |>
-      dplyr::select(TERM = TERM.y, GENE) |> dplyr::distinct()
-  }
-  list(TERM2GENE = assoc, TERM2NAME = names)
+  build_go_background_lst(private$.go_tbl, ontology, include_ancestors)
 }, overwrite = TRUE)
 
 # KEGG下载仅依赖KEGGREST
@@ -143,13 +127,20 @@ PublicDataManager$set("private", "load_kegg", function(use_cache = TRUE) {
 }, overwrite = TRUE)
 
 # 本地注释不依赖网络预检
-PublicDataManager$set("public", "initialize", function(kegg_organism_code, cache_dir = NULL, force_update = FALSE) {
+PublicDataManager$set("public", "initialize", function(kegg_organism_code = NULL, cache_dir = NULL, force_update = FALSE) {
   private$.kegg_code <- kegg_organism_code
   private$.force_update <- force_update
   private$.cache_dir <- if (is.null(cache_dir)) file.path(cfg$output_dir, "02_annotation", "cache") else cache_dir
   private$ensure_cache_dir()
 }, overwrite = TRUE)
-PublicDataManager$set("public", "load_project_annotation", function(gtf_file, gene2go_file) {
+PublicDataManager$set("public", "load_project_annotation", function(gtf_file = NULL, gene2go_file = NULL, eggnog = NULL,
+  query_gene_file = NULL, query_is_gene_id = FALSE, species = NULL, include_ancestors = cfg$go_ancestors,
+  kegg_term2name_file = NULL, run_kegg = TRUE) {
+  if (!is.null(eggnog)) return(self$load_eggnog_annotation(eggnog, query_gene_file, query_is_gene_id, species,
+    include_ancestors = include_ancestors, kegg_term2name_file = kegg_term2name_file, run_kegg = run_kegg))
+  private$.annotation_metadata <- NULL
+  private$.eggnog_result <- NULL
+  private$.kegg_tbl <- NULL
   private$parse_gtf_ncbi(gtf_file)
   private$load_go_gene2go.gz(gene2go_file)
   invisible(self)
@@ -304,3 +295,4 @@ tranexp_object$set("public", "pheatmap_go_sample2sample", function(contrast_numb
   if (!is.null(out_dir)) save_plot_pair(p, file.path(out_dir, "GO_gene_expression"), n_terms = nrow(matrix))
   list(matrix = matrix, plot = p)
 }, overwrite = TRUE)
+

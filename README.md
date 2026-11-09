@@ -205,3 +205,9 @@ TARGETS_TEST_ROOT=/path/to/printed/TEST_ROOT Rscript tests/check_branching.R
 
 ![GO-BP GSEA正负NES比较预览](docs/previews/GO_BP_GSEA.png)
 
+
+## eggNOG注释补充
+
+非模式生物的蛋白eggNOG结果可生成GO/KEGG背景，沿用现有类及富集接口。
+输入、配置、输出字段和独立验证见[eggNOG注释说明](docs/EGGNOG_ANNOTATION.md)。默认NCBI流程保持原配置。
+

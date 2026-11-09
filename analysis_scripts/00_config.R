@@ -15,6 +15,11 @@ cfg <- list(
   contrast_file     = file.path(project_dir, "02.Quant_定量结果_Calicivirus/03_GroupContrast.txt"),
   gtf_file          = file.path(project_dir, "00.database/GCF_018350175.1_F.catus_Fca126_mat1.0_genomic.gtf.gz"),
   gene2go_file      = file.path(project_dir, "gene2go.gz"),
+  annotation_source = "ncbi",
+  eggnog_file       = NULL,
+  query_gene_file   = NULL,
+  query_is_gene_id  = FALSE,
+  kegg_names_file   = NULL,
   output_dir        = file.path(project_dir, "03_analysis"),
   reference_species = "Felis catus",
   sample_species    = "Panthera leo",
@@ -60,9 +65,11 @@ core_packages <- c("R6", "tidyverse", "data.table", "SummarizedExperiment", "S4V
 missing_core <- core_packages[!vapply(core_packages, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_core)) stop("缺少基础包：", paste(missing_core, collapse = ", "), "；参见 README.md 的依赖说明")
 if (utils::packageVersion("dplyr") < "1.1.1") stop("需要dplyr >= 1.1.1")
+source(file.path(script_dir, "lib", "eggnog_annotation.R"))
 source(file.path(script_dir, "lib", "Rscript_R6_transcriptome_class.R"))
 source(file.path(script_dir, "lib", "compatibility.R"))
 source(file.path(script_dir, "lib", "plot_helpers.R"))
 set.seed(cfg$seed)
 data.table::setDTthreads(cfg$threads)
 message("配置完成：", cfg$project_dir)
+

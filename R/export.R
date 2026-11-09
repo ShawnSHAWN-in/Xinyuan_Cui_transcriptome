@@ -67,6 +67,11 @@ export_metadata_files <- function(metadata, jobs, output_dir) {
 
 export_annotation_files <- function(go, output_dir) {
   dir <- file.path(output_dir, "02_annotation", "GO_BP")
+  if (!is.null(go$metadata) && identical(go$metadata$source, "eggNOG-mapper")) {
+    env <- new.env(parent = globalenv())
+    sys.source(file.path("analysis_scripts", "lib", "eggnog_annotation.R"), env)
+    return(env$save_eggnog_reference_paths(go, file.path(output_dir, "02_annotation", "eggNOG")))
+  }
   c(write_table_path(go$annotation, file.path(dir, "gene_annotation.tsv")), write_table_path(go$direct_go, file.path(dir, "gene2go_direct.tsv")),
     write_table_path(go$background$TERM2GENE, file.path(dir, "TERM2GENE.tsv")), write_table_path(go$background$TERM2NAME, file.path(dir, "TERM2NAME.tsv")))
 }
@@ -219,4 +224,5 @@ export_comparative_combined_files <- function(catalog, selections, jobs, thresho
   }
   paths
 }
+
 

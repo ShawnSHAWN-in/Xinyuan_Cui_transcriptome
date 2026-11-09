@@ -1,9 +1,15 @@
 if (!exists("cfg")) stop("请先source analysis_scripts/00_config.R")
 input_dir <- module_dir("01_inputs")
 anno_dir <- module_dir("02_annotation")
-input_paths <- c(cfg$count_file, cfg$sample_file, cfg$contrast_file, cfg$gtf_file, cfg$gene2go_file)
+if (!cfg$annotation_source %in% c("ncbi", "eggnog")) stop("annotation_source仅支持ncbi或eggnog")
+annotation_paths <- if (cfg$annotation_source == "ncbi") c(cfg$gtf_file, cfg$gene2go_file) else {
+  if (is.null(cfg$eggnog_file)) stop("请配置eggnog_file")
+  if (!isTRUE(cfg$query_is_gene_id) && is.null(cfg$query_gene_file)) stop("请配置query_gene_file")
+  c(cfg$eggnog_file, cfg$query_gene_file, cfg$kegg_names_file)
+}
+input_paths <- c(cfg$count_file, cfg$sample_file, cfg$contrast_file, annotation_paths)
 signature <- input_signature(input_paths)
-for (path in c(cfg$gtf_file, cfg$gene2go_file)) {
+for (path in annotation_paths) {
   if (grepl("\\.gz$", path) && nzchar(Sys.which("gzip"))) {
     status <- system2("gzip", c("-t", shQuote(path)), stdout = FALSE, stderr = FALSE)
     if (status != 0L) stop("压缩文件不完整，请确认下载完成：", path)
@@ -57,7 +63,14 @@ if (any(!is.finite(lengths)) || any(lengths <= 0)) stop("Length必须是正数")
 design <- object_experiment_design$new(count_matrix = counts, gene_length = lengths,
                                        file_GroupSamples = sample_compatible_path, file_GroupContrast = contrast_compatible_path)
 public_data <- PublicDataManager$new(kegg_organism_code = cfg$kegg_code, cache_dir = file.path(anno_dir, "cache"))
-public_data$load_project_annotation(cfg$gtf_file, cfg$gene2go_file)
+if (cfg$annotation_source == "eggnog") {
+  public_data$load_project_annotation(eggnog = cfg$eggnog_file, query_gene_file = cfg$query_gene_file,
+    query_is_gene_id = cfg$query_is_gene_id, species = cfg$reference_species, include_ancestors = cfg$go_ancestors,
+    kegg_term2name_file = cfg$kegg_names_file, run_kegg = cfg$run_kegg)
+  save_eggnog_reference_paths(public_data$get_eggnog_annotation(), file.path(anno_dir, "eggNOG"))
+} else {
+  public_data$load_project_annotation(cfg$gtf_file, cfg$gene2go_file)
+}
 annotation <- public_data$get_gene_annotation()
 annotation$ENTREZID <- as.character(annotation$ENTREZID)
 save_table(annotation, file.path(anno_dir, "01_gene_annotation.tsv"))
@@ -70,7 +83,7 @@ save_table(reverse_mapping[reverse_mapping$n_input_ids > 1, ], file.path(anno_di
 usable_annotation <- attach_annotation_tbl(data.frame(Geneid = rownames(counts)), annotation)
 save_table(usable_annotation, file.path(anno_dir, "03c_unambiguous_count_gene_annotation.tsv"))
 unmapped <- data.frame(Geneid = setdiff(rownames(counts), annotation$Geneid[!is.na(annotation$ENTREZID)]))
-if (nrow(unmapped) == nrow(counts)) stop("矩阵Geneid与GTF GeneID映射完全不匹配，请核对定量使用的GTF版本与ID字段")
+if (nrow(unmapped) == nrow(counts)) stop("矩阵Geneid与注释映射完全不匹配，请核对参考版本与ID字段")
 save_table(unmapped, file.path(anno_dir, "04_unmapped_genes.tsv"))
 backgrounds <- list(GO = public_data$get_go_background(ontology = "BP", include_ancestors = cfg$go_ancestors), KEGG = NULL)
 if (!nrow(backgrounds$GO$TERM2GENE)) stop("GO-BP背景为空，不能继续富集")
@@ -88,7 +101,8 @@ for (db in names(backgrounds)) {
   save_table(backgrounds[[db]]$TERM2NAME, file.path(anno_dir, paste0(db, "_TERM2NAME.tsv")))
   record_status("01_annotation", db, "SUCCESS", paste(nrow(backgrounds[[db]]$TERM2GENE), "gene-term associations"))
 }
-coverage <- data.frame(Source = c("NCBI_GeneID_any", "NCBI_GeneID_unambiguous", "GO_BP_unambiguous", "KEGG_unambiguous"),
+id_prefix <- if (cfg$annotation_source == "eggnog") "eggNOG_Geneid" else "NCBI_GeneID"
+coverage <- data.frame(Source = c(paste0(id_prefix, "_any"), paste0(id_prefix, "_unambiguous"), "GO_BP_unambiguous", "KEGG_unambiguous"),
                        Annotated = c(sum(rownames(counts) %in% annotation$Geneid[!is.na(annotation$ENTREZID)]),
                                      sum(!is.na(usable_annotation$ENTREZID)),
                                      sum(usable_annotation$ENTREZID %in% backgrounds$GO$TERM2GENE$GENE),
@@ -100,6 +114,8 @@ save_table(coverage, file.path(anno_dir, "05_annotation_coverage.tsv"))
 saveRDS(cfg, file.path(input_dir, "00_configuration.rds"))
 inputs <- list(design = design, public_data = public_data, sample_info = sample_info, contrasts = contrasts, annotation = annotation,
                backgrounds = backgrounds, coverage = coverage, signature = signature,
-               settings = cfg[c("tax_id", "kegg_code", "go_ontology", "go_ancestors", "group_levels", "contrast_levels")])
+               settings = cfg[c("annotation_source", "query_is_gene_id", "reference_species", "tax_id", "kegg_code", "go_ontology", "go_ancestors",
+                 "run_kegg", "group_levels", "contrast_levels")])
 save_module(inputs, "01_inputs")
 record_status("01_inputs", "36_samples_9_contrasts", "SUCCESS", paste(nrow(counts), "genes"))
+
