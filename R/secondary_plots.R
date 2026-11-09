@@ -157,6 +157,10 @@ export_curve_combined_files <- function(records, jobs, thresholds, display, styl
 export_pathview_files <- function(records, thresholds, display, reference, settings, output_dir) {
   root <- file.path(output_dir, "07_enrichment", "Pathview")
   if (!isTRUE(display$pathview)) return(write_table_path(data.frame(Status = "DISABLED"), file.path(root, "status.tsv")))
+  if (annotation_source_chr(reference) == "eggnog") {
+    return(write_table_path(data.frame(Status = "SKIPPED", Detail = "eggNOG使用自定义Geneid；不可按NCBI Entrez执行Pathview"),
+      file.path(root, "status.tsv")))
+  }
   check_packages(c("pathview", "png"))
   files <- character()
   status <- list()
@@ -201,3 +205,4 @@ export_pathview_files <- function(records, thresholds, display, reference, setti
   rows <- if (length(status)) dplyr::bind_rows(status) else data.frame(Status = "NO_SIGNIFICANT_PATHWAYS")
   c(paths, write_table_path(rows, file.path(root, "status.tsv")))
 }
+

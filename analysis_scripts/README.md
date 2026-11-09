@@ -127,3 +127,9 @@ GO仅BP，默认向BP祖先条目传播关联；参数 `go_ancestors` 可关闭�
 `tests/smoke_core.R` 使用合成36样本数据测试真实R6接口、压缩GTF、无Symbol的标准gene2go、NOT/物种过滤、9个edgeR比较及核心图像；不含本项目真实测序数据。测试结果和可用包版本以附带 `VALIDATION.md` 为准。
 
 本代码包不意味着已在用户服务器运行；真实数据结果需要在该服务器按模块执行后检查。
+
+## eggNOG注释背景
+
+`00_config.R`现支持`annotation_source="eggnog"`；`01_input_annotation.R`读取蛋白功能注释及显式基因映射。
+无需NCBI GTF/gene2go；原NCBI入口仍可使用。详见[输入、端口和输出字段](../docs/EGGNOG_ANNOTATION.md)。
+

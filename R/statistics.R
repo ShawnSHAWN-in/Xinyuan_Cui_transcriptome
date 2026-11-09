@@ -26,7 +26,7 @@ attach_gene_annotation_tbl <- function(fit, annotation) {
   duplicated_ids <- unique(anno$ENTREZID[!is.na(anno$ENTREZID) & (duplicated(anno$ENTREZID) | duplicated(anno$ENTREZID, fromLast = TRUE))])
   anno <- anno[!anno$ENTREZID %in% duplicated_ids, , drop = FALSE]
   tbl <- dplyr::left_join(fit$table, anno, by = "Geneid")
-  if (nrow(tbl) && all(is.na(tbl$ENTREZID))) stop("受检Geneid无法获得唯一NCBI GeneID，请核对GTF和定量ID")
+  if (nrow(tbl) && all(is.na(tbl$ENTREZID))) stop("受检Geneid无法获得唯一富集ID，请核对注释和定量ID")
   list(job = fit$job, table = tbl, method = fit$method)
 }
 
@@ -70,3 +70,4 @@ calc_qc_lst <- function(count_data, metadata, settings) {
        library = tibble::tibble(Sample = colnames(counts), LibrarySize = colSums(counts), Detected = colSums(counts > 0),
          ZeroProportion = colMeans(counts == 0), NormalizationFactor = dge$samples$norm.factors))
 }
+

@@ -1,3 +1,36 @@
+annotation_source_chr <- function(reference) {
+  source <- reference$annotation_source
+  if (is.null(source)) source <- "ncbi"
+  if (!source %in% c("ncbi", "eggnog")) stop("annotation_source仅支持ncbi或eggnog")
+  source
+}
+
+annotation_input_paths <- function(paths, reference) {
+  fields <- if (annotation_source_chr(reference) == "ncbi") c("gtf_file", "gene2go_file") else "eggnog_file"
+  if (annotation_source_chr(reference) == "eggnog") {
+    if (!isTRUE(reference$query_is_gene_id)) fields <- c(fields, "query_gene_file")
+    if (!is.null(paths$kegg_names_file) && nzchar(paths$kegg_names_file)) fields <- c(fields, "kegg_names_file")
+  }
+  if (any(vapply(fields, function(name) is.null(paths[[name]]) || !nzchar(paths[[name]]), logical(1)))) {
+    stop("注释输入路径缺失：", paste(fields, collapse = ", "))
+  }
+  stats::setNames(vapply(fields, function(name) project_path(paths[[name]]), character(1)), fields)
+}
+
+read_project_annotation_lst <- function(source_files, reference, engine_files) {
+  if (!identical(reference$go_ontology, "BP")) stop("本项目GO图像仅使用BP")
+  if (annotation_source_chr(reference) == "ncbi") {
+    return(read_go_annotation_lst(source_files[["gtf_file"]], source_files[["gene2go_file"]], reference, engine_files))
+  }
+  context <- new.env(parent = globalenv())
+  helper <- engine_files[basename(engine_files) == "eggnog_annotation.R"]
+  if (length(helper) != 1L) stop("engine_files需要包含eggnog_annotation.R")
+  sys.source(helper, context)
+  optional <- function(name) if (name %in% names(source_files)) source_files[[name]] else NULL
+  context$build_eggnog_annotation_lst(source_files[["eggnog_file"]], optional("query_gene_file"), isTRUE(reference$query_is_gene_id),
+    reference$reference_species, reference$go_ontology, reference$go_ancestors, optional("kegg_names_file"), isTRUE(reference$run_kegg))
+}
+
 read_go_annotation_lst <- function(gtf_file, gene2go_file, reference, engine_files) {
   if (!identical(reference$go_ontology, "BP")) stop("本项目GO图像仅使用BP")
   context <- new_legacy_context(engine_files, reference)
@@ -20,7 +53,7 @@ kegg_input_paths <- function(config, config_file) {
   if (length(paths)) vapply(paths, project_path, character(1)) else config_file
 }
 
-build_kegg_snapshot_paths <- function(config, source_files, output_dir) {
+build_kegg_snapshot_paths <- function(config, source_files, output_dir, annotation = NULL) {
   dir <- file.path(output_dir, "02_annotation", "KEGG")
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   status <- "DISABLED"
@@ -28,7 +61,10 @@ build_kegg_snapshot_paths <- function(config, source_files, output_dir) {
   bg <- list(TERM2GENE = data.frame(TERM = character(), GENE = character()), TERM2NAME = data.frame(TERM = character(), NAME = character()))
   if (isTRUE(config$run_kegg)) {
     value <- tryCatch({
-      if (nzchar(config$kegg_term2gene)) {
+      if (annotation_source_chr(config) == "eggnog") {
+        if (is.null(annotation$backgrounds$KEGG)) stop("eggNOG KEGG背景尚未构建")
+        annotation$backgrounds$KEGG
+      } else if (nzchar(config$kegg_term2gene)) {
         assoc <- data.table::fread(source_files[1], colClasses = "character", data.table = FALSE)
         names <- data.table::fread(source_files[2], colClasses = "character", data.table = FALSE)
         if (!all(c("TERM", "GENE") %in% colnames(assoc)) || !all(c("TERM", "NAME") %in% colnames(names))) stop("KEGG本地背景列名错误")
@@ -63,3 +99,4 @@ make_background_jobs_lst <- function(go, kegg_files) {
          TERM2GENE = data.table::fread(kegg_files[1], colClasses = "character", data.table = FALSE),
          TERM2NAME = data.table::fread(kegg_files[2], colClasses = "character", data.table = FALSE))))
 }
+

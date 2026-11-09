@@ -677,6 +677,8 @@ PublicDataManager <- R6::R6Class(
     .kegg_code = NULL,
     .cache_dir = NULL,
     .force_update = FALSE,
+    .annotation_metadata = NULL,
+    .eggnog_result = NULL,
     
     # 缓存数据存储
     .gtf_tbl = NULL,          # 基因  注释表  (Geneid, SYMBOL, ENTREZID, GENENAME)
@@ -1089,21 +1091,16 @@ PublicDataManager <- R6::R6Class(
     # @param kegg_organism_code KEGG 物种代码（如 "hsa"）
     # @param cache_dir 缓存目录
     # @param force_update 是否强制重新下载
-    initialize = function(kegg_organism_code, cache_dir = NULL, force_update = FALSE) {
-      if (missing(kegg_organism_code)) stop("必须提供 kegg_organism_code")
+    initialize = function(kegg_organism_code = NULL, cache_dir = NULL, force_update = FALSE) {
       private$.kegg_code <- kegg_organism_code
       private$.force_update <- force_update
       if (is.null(cache_dir)) {
-        private$.cache_dir <- file.path("~/.cache/PublicDataManager", kegg_organism_code)
+        private$.cache_dir <- file.path("~/.cache/PublicDataManager", if (is.null(kegg_organism_code)) "local" else kegg_organism_code)
       } else {
         private$.cache_dir <- cache_dir
       }
       private$ensure_cache_dir()
       
-      # 网络测试
-      if (!private$test_kegg_connection()) {
-        warning("KEGG 网络不可达，将仅使用本地缓存数据")
-      }
     },
     
     # ========== 2. 公共接口 构造函数 ==========
@@ -1136,7 +1133,16 @@ PublicDataManager <- R6::R6Class(
                                  gene2ensembl.gz = NULL, 
                                  eggnog = NULL,
                                  use_cache = TRUE, 
-                                 match_by = c("Geneid", "SYMBOL")) {
+                                 match_by = c("Geneid", "SYMBOL"), query_gene_file = NULL, query_is_gene_id = FALSE,
+                                 species = NULL, include_ancestors = TRUE, kegg_term2name_file = NULL, run_kegg = TRUE) {
+      if (!is.null(eggnog)) {
+        if (use_orgdb || !is.null(gene2go.gz) || !is.null(gene2ensembl.gz)) stop("eggNOG模式不混用OrgDb/gene2go/gene2ensembl")
+        return(self$load_eggnog_annotation(eggnog, query_gene_file, query_is_gene_id, species,
+          include_ancestors = include_ancestors, kegg_term2name_file = kegg_term2name_file, run_kegg = run_kegg))
+      }
+      private$.eggnog_result <- NULL
+      private$.annotation_metadata <- NULL
+      private$.kegg_tbl <- NULL
       
       # KEGG 解析，使用 缓存数据存储 特性
       # .kegg_tbl = NULL,         # KEGG 注释表 (Keggpathid, ENTREZID, Keggpathname)
@@ -1201,23 +1207,29 @@ PublicDataManager <- R6::R6Class(
         
         private$.go_tbl <- gene2go[gene2go$ENTREZID %in% private$.gtf_tbl$ENTREZID, ]
       }
-      # 模式5：使用 三方基因组 模式生物和非模式生物 输入形参：三方参考基因组GTF文件、eggnog 综合注释文件 GTF KEGG GO 注释
-      else if(
-        is.null(gtf_file_ncbi) && 
-        !is.null(gtf_file_ensembl) && 
-        !use_orgdb && 
-        !is.null(gene2go.gz) && 
-        !is.null(gene2ensembl.gz) && 
-        is.null(eggnog)
-      ){
-        message("模式5：使用 三方基因组 模式生物和非模式生物 输入形参：三方参考基因组GTF文件、eggnog 综合注释文件 GTF KEGG GO 注释")
-        stop("")
-      }
       else{
         stop("形参配置错误")
       }
     },
     
+    # eggNOG兼容既有端口
+    load_eggnog_annotation = function(eggnog, query_gene_file = NULL, query_is_gene_id = FALSE, species = NULL,
+                                       ontology = "BP", include_ancestors = TRUE, kegg_term2name_file = NULL, run_kegg = TRUE) {
+      if (!exists("build_eggnog_annotation_lst", mode = "function")) stop("请先source analysis_scripts/lib/eggnog_annotation.R")
+      result <- build_eggnog_annotation_lst(eggnog, query_gene_file, query_is_gene_id, species, ontology,
+        include_ancestors, kegg_term2name_file, run_kegg)
+      private$.gtf_tbl <- result$annotation
+      private$.go_tbl <- result$direct_go
+      kegg <- result$backgrounds$KEGG
+      private$.kegg_tbl <- dplyr::left_join(kegg$TERM2GENE, kegg$TERM2NAME, by = "TERM")
+      names(private$.kegg_tbl) <- c("Keggpathid", "ENTREZID", "Keggpathname")
+      private$.annotation_metadata <- result$metadata
+      private$.eggnog_result <- result
+      invisible(self)
+    },
+    get_annotation_metadata = function() private$.annotation_metadata,
+    get_eggnog_annotation = function() private$.eggnog_result,
+
     # 使用 OrgDb 作为注释来源，适合模式生物且没有 GTF 文件时快速构建注释和 GO 背景。
     load_annotation_from_orgdb = function(use_cache = TRUE,
                                           load_go = TRUE,
@@ -1337,6 +1349,9 @@ PublicDataManager <- R6::R6Class(
     
     # 生成 GO 背景（仅 BP 分支）
     get_go_background = function(ontology = "BP") {
+      if (!is.null(private$.eggnog_result)) {
+        return(build_go_background_lst(private$.go_tbl, ontology, private$.annotation_metadata$include_ancestors))
+      }
       if (!requireNamespace("GO.db", quietly = TRUE)) {
         .require_bioc_package("GO.db", load = FALSE)
       }
@@ -1889,3 +1904,4 @@ run_pca_style_visualization <- function(design_obj,
     styles = styles
   ))
 }
+

@@ -1,4 +1,6 @@
 reference_species: Felis catus
+annotation_source: ncbi
+query_is_gene_id: false
 tax_id: 9685
 kegg_code: fca
 go_ontology: BP
@@ -8,3 +10,4 @@ require_kegg: false
 kegg_term2gene: ''
 kegg_term2name: ''
 kegg_refresh: initial
+

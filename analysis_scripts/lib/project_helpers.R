@@ -88,7 +88,8 @@ input_signature <- function(paths) {
 check_module_inputs <- function(inputs) {
   current <- input_signature(inputs$signature$Path)
   if (!identical(current, inputs$signature)) stop("输入文件已改变，请从01模块重新执行，避免使用旧结果")
-  if (!identical(inputs$settings, cfg[c("tax_id", "kegg_code", "go_ontology", "go_ancestors", "group_levels", "contrast_levels")])) {
+  if (!identical(inputs$settings, cfg[c("annotation_source", "query_is_gene_id", "reference_species", "tax_id", "kegg_code", "go_ontology", "go_ancestors",
+    "run_kegg", "group_levels", "contrast_levels")])) {
     stop("输入或注释配置已改变，请重新执行01模块")
   }
   invisible(TRUE)
@@ -122,3 +123,4 @@ select_representative_ids <- function(results, max_each = cfg$compare_top_each, 
     dplyr::arrange(dplyr::desc(n_comparisons), min_fdr, ID)
   utils::head(summary$ID, max_total)
 }
+
