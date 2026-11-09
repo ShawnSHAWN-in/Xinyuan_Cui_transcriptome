@@ -18,6 +18,7 @@ annotation_input_paths <- function(paths, reference) {
 }
 
 read_project_annotation_lst <- function(source_files, reference, engine_files) {
+  if (!identical(reference$go_ontology, "BP")) stop("本项目GO图像仅使用BP")
   if (annotation_source_chr(reference) == "ncbi") {
     return(read_go_annotation_lst(source_files[["gtf_file"]], source_files[["gene2go_file"]], reference, engine_files))
   }
